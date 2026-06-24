@@ -76,7 +76,6 @@ namespace winrt::TerminalApp::implementation
 
         void UpdateZoom(std::shared_ptr<Pane> newFocus);
         void EqualizeSplits();
-        void ToggleAutoTile();
         void ToggleZoom();
         bool IsZoomed();
         void EnterZoom();
@@ -168,11 +167,6 @@ namespace winrt::TerminalApp::implementation
         std::shared_ptr<Pane> _activePane{ nullptr };
         std::shared_ptr<Pane> _zoomedPane{ nullptr };
 
-        // When true, the pane layout is automatically re-balanced (all splits
-        // reset to 50/50) whenever a pane is added or removed, keeping the tab
-        // evenly tiled like a tiling window manager's dynamic layout.
-        bool _autoTileEnabled{ false };
-        void _ReflowIfAutoTiling();
 
         winrt::Microsoft::Terminal::Settings::Model::IconStyle _lastIconStyle;
         winrt::hstring _lastIconPath{};

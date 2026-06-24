@@ -496,9 +496,6 @@
   <data name="EqualizePanesCommandKey" xml:space="preserve">
     <value>Equalize panes</value>
   </data>
-  <data name="ToggleTilingModeCommandKey" xml:space="preserve">
-    <value>Toggle automatic pane tiling</value>
-  </data>
   <data name="TogglePaneReadOnlyCommandKey" xml:space="preserve">
     <value>Toggle pane read-only mode</value>
   </data>

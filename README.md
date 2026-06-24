@@ -12,57 +12,41 @@ This is a **personal fork** of [microsoft/terminal](https://github.com/microsoft
 
 ### Custom changes in this fork
 
-This fork adds a [Hyprland](https://hyprland.org/)-style dynamic tiling workflow to the pane system, plus a visual indicator and dedicated keybinding management.
+This fork adds a few pane-management conveniences on top of upstream.
 
-#### 1. Auto-tiling mode
+#### 1. Equalize panes
 
-A per-tab **auto-tile mode** that behaves like a dynamic tiling window manager. When enabled on a tab, newly created and closed panes automatically **reflow** so the layout stays evenly tiled — you don't have to manually resize.
-
-- **Action:** `toggleTilingMode` (id `Terminal.ToggleTilingMode`)
-- Toggles the auto-tile state on the **currently focused tab**.
-- While active, splitting or closing panes triggers an automatic re-layout.
-
-#### 2. Equalize panes
-
-Instantly makes every split in the current tab evenly sized — a one-shot version of what auto-tile does continuously. Useful even when auto-tile is off.
+Instantly resizes every split in the current tab so all panes end up with an
+equal area — a clean, tiling-window-manager-style "equalize" command. Each
+split is weighted by how many panes are on either side, so every pane (not just
+each half) gets the same size.
 
 - **Action:** `equalizePanes` (id `Terminal.EqualizePanes`)
 - No-op when the tab has only a single pane.
 
-#### 3. Visual tiling indicator
+#### 2. Mouse drag-to-resize panes
 
-When auto-tile mode is active on a tab, a small **tiling icon appears in that tab's header**, so you can tell at a glance which tabs are in tiling mode.
-
-#### 4. Dedicated `keybindings.json`
-
-Key bindings can be managed in a separate `keybindings.json` file (in the app's `LocalState` folder) instead of mixing them into `settings.json`.
+A thin, hit-testable strip sits on each split boundary. Drag it with the mouse
+to resize the two adjacent panes live (clamped to their minimum sizes). The
+strip is invisible at rest and faintly highlights on hover. Upstream Windows
+Terminal only supports resizing panes with the keyboard (`Alt+Shift+arrows`).
 
 #### Keybindings
 
-The new actions are **not bound to any keys by default** — bind them yourself. Add entries to your `keybindings.json` (or the `actions` array in `settings.json`):
+`equalizePanes` is **not bound to any key by default** — bind it yourself in
+`settings.json` (or via the Settings UI → Actions):
 
 ```jsonc
 {
     "keybindings": [
-        // Hyprland-style tiling
-        { "id": "Terminal.ToggleTilingMode", "keys": "ctrl+alt+t" },
-        { "id": "Terminal.EqualizePanes",    "keys": "ctrl+alt+e" },
-
-        // Pane management (example bindings used in this fork)
-        { "id": "Terminal.SplitPaneRight",   "keys": "ctrl+alt+v" },
-        { "id": "Terminal.DuplicatePaneAuto","keys": "ctrl+alt+d" }
+        { "id": "Terminal.EqualizePanes", "keys": "ctrl+alt+e" }
     ]
 }
 ```
 
 | Action ID | Suggested keys | What it does |
 |-----------|----------------|--------------|
-| `Terminal.ToggleTilingMode` | `ctrl+alt+t` | Toggle auto-tile mode for the focused tab (panes auto-reflow) |
-| `Terminal.EqualizePanes` | `ctrl+alt+e` | Make all splits in the current tab evenly sized |
-| `Terminal.SplitPaneRight` | `ctrl+alt+v` | Split the focused pane to the right |
-| `Terminal.DuplicatePaneAuto` | `ctrl+alt+d` | Duplicate the focused pane |
-
-> The keys above are examples — change them to whatever you prefer. The two tiling actions (`ToggleTilingMode`, `EqualizePanes`) are the core additions of this fork.
+| `Terminal.EqualizePanes` | `ctrl+alt+e` | Make all panes in the current tab equal-sized |
 
 ---
 

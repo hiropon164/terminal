@@ -664,12 +664,6 @@ namespace winrt::TerminalApp::implementation
         // the focus here will give the same effect though.
         _UpdateActivePane(newPane);
 
-        // In automatic tiling mode we intentionally do NOT re-balance the whole
-        // layout when a pane is added. A new pane only subdivides the focused
-        // pane's own space (the default Split() behavior), so the sizes of all
-        // other panes are preserved. Use EqualizePanes (or re-toggle tiling
-        // mode) to evenly redistribute on demand.
-
         return { original, newPane };
     }
 
@@ -1474,11 +1468,6 @@ namespace winrt::TerminalApp::implementation
                         }
                     }
                 }
-
-                // In automatic tiling mode we intentionally do NOT re-balance
-                // the layout when a pane closes. The freed space is absorbed by
-                // the surviving sibling (the default Pane behavior), leaving the
-                // sizes of all other panes untouched.
             }
         });
 
@@ -2029,39 +2018,6 @@ namespace winrt::TerminalApp::implementation
         ASSERT_UI_THREAD();
 
         if (_rootPane)
-        {
-            _rootPane->EqualizeSplits();
-        }
-    }
-
-    // Method Description:
-    // - Toggles "automatic tiling" mode for this tab. While enabled, the pane
-    //   layout is re-balanced to evenly-sized tiles whenever a pane is added or
-    //   removed, mimicking a tiling window manager's dynamic layout. Turning the
-    //   mode on also re-balances the current layout immediately.
-    // Arguments:
-    // - <none>
-    // Return Value:
-    // - <none>
-    void Tab::ToggleAutoTile()
-    {
-        ASSERT_UI_THREAD();
-
-        _autoTileEnabled = !_autoTileEnabled;
-        _tabStatus.IsTilingModeActive(_autoTileEnabled);
-        if (_autoTileEnabled)
-        {
-            _ReflowIfAutoTiling();
-        }
-    }
-
-    // Method Description:
-    // - If automatic tiling is enabled, re-balance every split in the tab to an
-    //   even 50/50 division. No-op otherwise. Used as the reflow hook after a
-    //   pane is added or removed.
-    void Tab::_ReflowIfAutoTiling()
-    {
-        if (_autoTileEnabled && _rootPane)
         {
             _rootPane->EqualizeSplits();
         }
