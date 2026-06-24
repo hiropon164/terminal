@@ -664,9 +664,11 @@ namespace winrt::TerminalApp::implementation
         // the focus here will give the same effect though.
         _UpdateActivePane(newPane);
 
-        // In automatic tiling mode, re-balance the layout now that a pane was
-        // added. This is synchronous because Split() has already finished.
-        _ReflowIfAutoTiling();
+        // In automatic tiling mode we intentionally do NOT re-balance the whole
+        // layout when a pane is added. A new pane only subdivides the focused
+        // pane's own space (the default Split() behavior), so the sizes of all
+        // other panes are preserved. Use EqualizePanes (or re-toggle tiling
+        // mode) to evenly redistribute on demand.
 
         return { original, newPane };
     }
@@ -1473,23 +1475,10 @@ namespace winrt::TerminalApp::implementation
                     }
                 }
 
-                // In automatic tiling mode, re-balance the layout after the
-                // closing pane is removed. Defer to the dispatcher so this runs
-                // after the pane's parent finishes absorbing the surviving
-                // sibling (the tree collapse happens via a separate handler on
-                // this same Closed event, so the order is not guaranteed here).
-                if (tab->_autoTileEnabled)
-                {
-                    if (const auto dispatcher{ DispatcherQueue::GetForCurrentThread() })
-                    {
-                        dispatcher.TryEnqueue([weakThis]() {
-                            if (auto tab{ weakThis.get() })
-                            {
-                                tab->_ReflowIfAutoTiling();
-                            }
-                        });
-                    }
-                }
+                // In automatic tiling mode we intentionally do NOT re-balance
+                // the layout when a pane closes. The freed space is absorbed by
+                // the surviving sibling (the default Pane behavior), leaving the
+                // sizes of all other panes untouched.
             }
         });
 
