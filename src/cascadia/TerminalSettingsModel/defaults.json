@@ -611,6 +611,8 @@
         { "command": "toggleBroadcastInput", "id": "Terminal.ToggleBroadcastInput" },
         { "command": "togglePaneZoom", "id": "Terminal.TogglePaneZoom" },
         { "command": "equalizePanes", "id": "Terminal.EqualizePanes" },
+        { "command": "openFileBrowser", "id": "Terminal.OpenFileBrowser" },
+        { "command": "selectFileBrowserDrive", "id": "Terminal.SelectFileBrowserDrive" },
         { "command": "toggleSplitOrientation", "id": "Terminal.ToggleSplitOrientation" },
         { "command": "toggleReadOnlyMode", "id": "Terminal.ToggleReadOnlyMode" },
         { "command": "enableReadOnlyMode", "id": "Terminal.EnableReadOnlyMode" },

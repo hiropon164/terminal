@@ -717,6 +717,12 @@
   <data name="OpenScratchpadKey" xml:space="preserve">
     <value>Open scratchpad</value>
   </data>
+  <data name="OpenFileBrowserCommandKey" xml:space="preserve">
+    <value>Open file browser</value>
+  </data>
+  <data name="SelectFileBrowserDriveCommandKey" xml:space="preserve">
+    <value>File browser: select drive</value>
+  </data>
   <data name="SelectOutputNextCommandKey" xml:space="preserve">
     <value>Select next command output</value>
   </data>

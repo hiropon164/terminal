@@ -6,6 +6,7 @@
 
 #include "TerminalPage.h"
 #include "ScratchpadContent.h"
+#include "FileBrowserContent.h"
 #include "../WinRTUtils/inc/WtExeUtils.h"
 #include "../../types/inc/utils.hpp"
 #include "../TerminalSettingsAppAdapterLib/TerminalSettings.h"
@@ -1601,6 +1602,41 @@ namespace winrt::TerminalApp::implementation
             _SplitPane(_senderOrFocusedTab(sender), SplitDirection::Automatic, 0.5f, resultPane);
             args.Handled(true);
         }
+    }
+
+    void TerminalPage::_HandleOpenFileBrowser(const IInspectable& sender,
+                                              const ActionEventArgs& args)
+    {
+        const auto& browserContent{ winrt::make_self<FileBrowserContent>(winrt::hstring{}) };
+
+        // Add our key event handler to the pane so keys the content doesn't
+        // handle still dispatch actions (same pattern as the scratchpad).
+        browserContent->GetRoot().KeyDown({ get_weak(), &TerminalPage::_KeyDownHandler });
+
+        const auto resultPane = std::make_shared<Pane>(*browserContent);
+        _SplitPane(_senderOrFocusedTab(sender), SplitDirection::Automatic, 0.5f, resultPane);
+        args.Handled(true);
+    }
+
+    void TerminalPage::_HandleSelectFileBrowserDrive(const IInspectable& /*sender*/,
+                                                     const ActionEventArgs& args)
+    {
+        // Find the file browser in the focused tab and show its drive list.
+        if (const auto& focusedTab{ _GetFocusedTabImpl() })
+        {
+            if (const auto rootPane{ focusedTab->GetRootPane() })
+            {
+                rootPane->WalkTree([](const auto& p) -> bool {
+                    if (const auto& filer{ p->GetContent().try_as<FileBrowserContent>() })
+                    {
+                        filer->ShowDrives();
+                        return true;
+                    }
+                    return false;
+                });
+            }
+        }
+        args.Handled(true);
     }
 
     void TerminalPage::_HandleOpenAbout(const IInspectable& /*sender*/,

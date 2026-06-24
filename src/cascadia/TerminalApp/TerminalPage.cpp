@@ -19,6 +19,7 @@
 #include "MarkdownPaneContent.h"
 #include "Remoting.h"
 #include "ScratchpadContent.h"
+#include "FileBrowserContent.h"
 #include "SettingsPaneContent.h"
 #include "SnippetsPaneContent.h"
 #include "TabRowControl.h"
@@ -3903,6 +3904,12 @@ namespace winrt::TerminalApp::implementation
             scratchPane->GetRoot().KeyDown({ get_weak(), &TerminalPage::_KeyDownHandler });
 
             content = *scratchPane;
+        }
+        else if (paneType == L"fileBrowser")
+        {
+            const auto& browserContent{ winrt::make_self<FileBrowserContent>(winrt::hstring{}) };
+            browserContent->GetRoot().KeyDown({ get_weak(), &TerminalPage::_KeyDownHandler });
+            content = *browserContent;
         }
         else if (paneType == L"settings")
         {
