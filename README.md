@@ -2,6 +2,74 @@
 
 [![Terminal Build Status](https://dev.azure.com/shine-oss/terminal/_apis/build/status%2FTerminal%20CI?branchName=main)](https://dev.azure.com/shine-oss/terminal/_build/latest?definitionId=1&branchName=main)
 
+---
+
+## 📌 About this fork
+
+This is a **personal fork** of [microsoft/terminal](https://github.com/microsoft/terminal), maintained for private use. It is **not** affiliated with or endorsed by Microsoft, and is **not** an official build. The original project is licensed under the [MIT License](./LICENSE), which is preserved here.
+
+> Based on Windows Terminal **v1.24.2372.0**.
+
+### Custom changes in this fork
+
+This fork adds a [Hyprland](https://hyprland.org/)-style dynamic tiling workflow to the pane system, plus a visual indicator and dedicated keybinding management.
+
+#### 1. Auto-tiling mode
+
+A per-tab **auto-tile mode** that behaves like a dynamic tiling window manager. When enabled on a tab, newly created and closed panes automatically **reflow** so the layout stays evenly tiled — you don't have to manually resize.
+
+- **Action:** `toggleTilingMode` (id `Terminal.ToggleTilingMode`)
+- Toggles the auto-tile state on the **currently focused tab**.
+- While active, splitting or closing panes triggers an automatic re-layout.
+
+#### 2. Equalize panes
+
+Instantly makes every split in the current tab evenly sized — a one-shot version of what auto-tile does continuously. Useful even when auto-tile is off.
+
+- **Action:** `equalizePanes` (id `Terminal.EqualizePanes`)
+- No-op when the tab has only a single pane.
+
+#### 3. Visual tiling indicator
+
+When auto-tile mode is active on a tab, a small **tiling icon appears in that tab's header**, so you can tell at a glance which tabs are in tiling mode.
+
+#### 4. Dedicated `keybindings.json`
+
+Key bindings can be managed in a separate `keybindings.json` file (in the app's `LocalState` folder) instead of mixing them into `settings.json`.
+
+#### Keybindings
+
+The new actions are **not bound to any keys by default** — bind them yourself. Add entries to your `keybindings.json` (or the `actions` array in `settings.json`):
+
+```jsonc
+{
+    "keybindings": [
+        // Hyprland-style tiling
+        { "id": "Terminal.ToggleTilingMode", "keys": "ctrl+alt+t" },
+        { "id": "Terminal.EqualizePanes",    "keys": "ctrl+alt+e" },
+
+        // Pane management (example bindings used in this fork)
+        { "id": "Terminal.SplitPaneRight",   "keys": "ctrl+alt+v" },
+        { "id": "Terminal.DuplicatePaneAuto","keys": "ctrl+alt+d" }
+    ]
+}
+```
+
+| Action ID | Suggested keys | What it does |
+|-----------|----------------|--------------|
+| `Terminal.ToggleTilingMode` | `ctrl+alt+t` | Toggle auto-tile mode for the focused tab (panes auto-reflow) |
+| `Terminal.EqualizePanes` | `ctrl+alt+e` | Make all splits in the current tab evenly sized |
+| `Terminal.SplitPaneRight` | `ctrl+alt+v` | Split the focused pane to the right |
+| `Terminal.DuplicatePaneAuto` | `ctrl+alt+d` | Duplicate the focused pane |
+
+> The keys above are examples — change them to whatever you prefer. The two tiling actions (`ToggleTilingMode`, `EqualizePanes`) are the core additions of this fork.
+
+---
+
+Everything below this section is the original Microsoft README, kept for reference.
+
+---
+
 # Welcome to the Windows Terminal, Console and Command-Line repo
 
 <details>

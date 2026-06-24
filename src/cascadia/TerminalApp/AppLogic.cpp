@@ -303,6 +303,7 @@ namespace winrt::TerminalApp::implementation
     void AppLogic::_RegisterSettingsChange()
     {
         const std::filesystem::path settingsPath{ std::wstring_view{ CascadiaSettings::SettingsPath() } };
+        const std::filesystem::path keybindingsPath{ std::wstring_view{ CascadiaSettings::KeybindingsPath() } };
         _reader.create(
             settingsPath.parent_path().c_str(),
             false,
@@ -311,7 +312,7 @@ namespace winrt::TerminalApp::implementation
             // editors, who will write a temp file, then rename it to be the
             // actual file you wrote. So listen for that too.
             wil::FolderChangeEvents::FileName | wil::FolderChangeEvents::LastWriteTime,
-            [this, settingsBasename = settingsPath.filename()](wil::FolderChangeEvent, PCWSTR fileModified) {
+            [this, settingsBasename = settingsPath.filename(), keybindingsBasename = keybindingsPath.filename()](wil::FolderChangeEvent, PCWSTR fileModified) {
                 // DO NOT create a static reference to ApplicationState::SharedInstance here.
                 //
                 // ApplicationState::SharedInstance already caches its own
@@ -329,7 +330,7 @@ namespace winrt::TerminalApp::implementation
 
                 const auto modifiedBasename = std::filesystem::path{ fileModified }.filename();
 
-                if (modifiedBasename == settingsBasename)
+                if (modifiedBasename == settingsBasename || modifiedBasename == keybindingsBasename)
                 {
                     ReloadSettingsThrottled();
                 }

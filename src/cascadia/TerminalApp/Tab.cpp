@@ -664,6 +664,10 @@ namespace winrt::TerminalApp::implementation
         // the focus here will give the same effect though.
         _UpdateActivePane(newPane);
 
+        // In automatic tiling mode, re-balance the layout now that a pane was
+        // added. This is synchronous because Split() has already finished.
+        _ReflowIfAutoTiling();
+
         return { original, newPane };
     }
 
@@ -1468,6 +1472,24 @@ namespace winrt::TerminalApp::implementation
                         }
                     }
                 }
+
+                // In automatic tiling mode, re-balance the layout after the
+                // closing pane is removed. Defer to the dispatcher so this runs
+                // after the pane's parent finishes absorbing the surviving
+                // sibling (the tree collapse happens via a separate handler on
+                // this same Closed event, so the order is not guaranteed here).
+                if (tab->_autoTileEnabled)
+                {
+                    if (const auto dispatcher{ DispatcherQueue::GetForCurrentThread() })
+                    {
+                        dispatcher.TryEnqueue([weakThis]() {
+                            if (auto tab{ weakThis.get() })
+                            {
+                                tab->_ReflowIfAutoTiling();
+                            }
+                        });
+                    }
+                }
             }
         });
 
@@ -2003,6 +2025,56 @@ namespace winrt::TerminalApp::implementation
         else
         {
             EnterZoom();
+        }
+    }
+
+    // Method Description:
+    // - Resets every split in this tab's pane tree to an even 50/50 division,
+    //   tiling all panes to equal sizes.
+    // Arguments:
+    // - <none>
+    // Return Value:
+    // - <none>
+    void Tab::EqualizeSplits()
+    {
+        ASSERT_UI_THREAD();
+
+        if (_rootPane)
+        {
+            _rootPane->EqualizeSplits();
+        }
+    }
+
+    // Method Description:
+    // - Toggles "automatic tiling" mode for this tab. While enabled, the pane
+    //   layout is re-balanced to evenly-sized tiles whenever a pane is added or
+    //   removed, mimicking a tiling window manager's dynamic layout. Turning the
+    //   mode on also re-balances the current layout immediately.
+    // Arguments:
+    // - <none>
+    // Return Value:
+    // - <none>
+    void Tab::ToggleAutoTile()
+    {
+        ASSERT_UI_THREAD();
+
+        _autoTileEnabled = !_autoTileEnabled;
+        _tabStatus.IsTilingModeActive(_autoTileEnabled);
+        if (_autoTileEnabled)
+        {
+            _ReflowIfAutoTiling();
+        }
+    }
+
+    // Method Description:
+    // - If automatic tiling is enabled, re-balance every split in the tab to an
+    //   even 50/50 division. No-op otherwise. Used as the reflow hook after a
+    //   pane is added or removed.
+    void Tab::_ReflowIfAutoTiling()
+    {
+        if (_autoTileEnabled && _rootPane)
+        {
+            _rootPane->EqualizeSplits();
         }
     }
 

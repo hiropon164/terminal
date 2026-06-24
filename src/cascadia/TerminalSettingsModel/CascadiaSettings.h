@@ -91,6 +91,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         void MergeInboxIntoUserSettings();
         void FindFragmentsAndMergeIntoUserSettings(bool generateExtensionPackages);
         void MergeFragmentIntoUserSettings(const winrt::hstring& source, const winrt::hstring& basePath, const std::string_view& content);
+        void MergeKeybindingsFileIntoUserSettings(const std::string_view& content);
         void FinalizeLayering();
         bool DisableDeletedProfiles();
         bool AddDynamicProfileFolders();
@@ -149,6 +150,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
 
         static winrt::hstring SettingsDirectory();
         static winrt::hstring SettingsPath();
+        static winrt::hstring KeybindingsPath();
         static winrt::hstring DefaultSettingsPath();
         static winrt::hstring ApplicationDisplayName();
         static winrt::hstring ApplicationVersion();
@@ -200,6 +202,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
 
     private:
         static const std::filesystem::path& _settingsPath();
+        static const std::filesystem::path& _keybindingsPath();
         static const std::filesystem::path& _releaseSettingsPath();
         static winrt::hstring _calculateHash(std::string_view settings, const FILETIME& lastWriteTime);
 

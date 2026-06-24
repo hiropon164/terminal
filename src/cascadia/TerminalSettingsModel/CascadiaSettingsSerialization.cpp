@@ -32,6 +32,10 @@ using namespace winrt::Microsoft::Terminal::Settings;
 using namespace winrt::Microsoft::Terminal::Settings::Model::implementation;
 
 static constexpr std::wstring_view SettingsFilename{ L"settings.json" };
+// An optional, dedicated file for keybindings. If present in the settings
+// directory, it is layered on top of the user's settings.json and, unlike
+// fragments, is allowed to bind actions to keys.
+static constexpr std::wstring_view KeybindingsFilename{ L"keybindings.json" };
 static constexpr std::wstring_view DefaultsFilename{ L"defaults.json" };
 
 static constexpr std::string_view ProfilesKey{ "profiles" };
@@ -456,6 +460,22 @@ void SettingsLoader::MergeFragmentIntoUserSettings(const winrt::hstring& source,
 {
     ParsedSettings fragmentSettings;
     _parseFragment(source, basePath, content, fragmentSettings, std::nullopt);
+}
+
+// Layers the contents of an optional, dedicated keybindings.json file on top of
+// the user's settings. Only its "actions"/"keybindings" are read. Unlike a
+// fragment, this file IS allowed to bind actions to keys (withKeybindings=true),
+// since it's the user's own file. We tag the entries as Fragment-origin so they
+// are not written back into settings.json when the user edits settings.
+void SettingsLoader::MergeKeybindingsFileIntoUserSettings(const std::string_view& content)
+{
+    if (content.empty())
+    {
+        return;
+    }
+
+    const auto json = _parseJson(content);
+    userSettings.globals->LayerActionsFrom(json.root, OriginTag::Fragment, true);
 }
 
 // Call this method before passing SettingsLoader to the CascadiaSettings constructor.
@@ -1268,6 +1288,16 @@ try
     // Fragments might reference user profiles created by a generator.
     // --> FindFragmentsAndMergeIntoUserSettings must be called after MergeInboxIntoUserSettings.
     loader.FindFragmentsAndMergeIntoUserSettings(false /*generateExtensionPackages*/);
+
+    // Layer an optional, dedicated keybindings.json file (in the settings
+    // directory) on top of the user settings. Unlike fragments, this file is
+    // allowed to bind actions to keys, letting users keep their keybindings in
+    // a separate, shareable file. A missing/empty file is a no-op.
+    if (const auto keybindingsString = til::io::read_file_as_utf8_string_if_exists(_keybindingsPath(), false); !keybindingsString.empty())
+    {
+        loader.MergeKeybindingsFileIntoUserSettings(keybindingsString);
+    }
+
     loader.FinalizeLayering();
 
     // DisableDeletedProfiles returns true whenever we encountered any new generated/dynamic profiles.
@@ -1497,6 +1527,12 @@ const std::filesystem::path& CascadiaSettings::_settingsPath()
     return path;
 }
 
+const std::filesystem::path& CascadiaSettings::_keybindingsPath()
+{
+    static const auto path = GetBaseSettingsPath() / KeybindingsFilename;
+    return path;
+}
+
 // Method Description:
 // - Returns the path of the settings.json file from stable file path
 // Arguments:
@@ -1538,6 +1574,13 @@ winrt::hstring CascadiaSettings::SettingsDirectory()
 winrt::hstring CascadiaSettings::SettingsPath()
 {
     return winrt::hstring{ _settingsPath().native() };
+}
+
+// Method Description:
+// - Returns the full path to the optional dedicated keybindings.json file.
+winrt::hstring CascadiaSettings::KeybindingsPath()
+{
+    return winrt::hstring{ _keybindingsPath().native() };
 }
 
 bool CascadiaSettings::IsPortableMode()

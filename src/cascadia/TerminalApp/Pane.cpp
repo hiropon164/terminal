@@ -278,6 +278,38 @@ bool Pane::_Resize(const ResizeDirection& direction)
 }
 
 // Method Description:
+// - Recursively resizes every split in this subtree so that all leaf panes end
+//   up with an equal area, producing a cleanly tiled arrangement (like a tiling
+//   window manager's "equalize" command). Each split is weighted by the number
+//   of leaf panes on either side - a flat 50/50 would only look even for a
+//   perfectly balanced tree, leaving deeper panes smaller. For each parent we
+//   mirror the per-node relayout that _Resize performs: update the desired
+//   split position, then regenerate the grid's row/column definitions so the
+//   change takes effect immediately.
+// Arguments:
+// - <none>
+// Return Value:
+// - <none>
+void Pane::EqualizeSplits()
+{
+    WalkTree([](const auto& pane) {
+        if (!pane->_IsLeaf())
+        {
+            // Size each side in proportion to how many leaf panes it contains,
+            // so every leaf receives the same fraction of the overall space.
+            const auto firstLeaves = pane->_firstChild->GetLeafPaneCount();
+            const auto secondLeaves = pane->_secondChild->GetLeafPaneCount();
+            const auto totalLeaves = firstLeaves + secondLeaves;
+            if (totalLeaves > 0)
+            {
+                pane->_desiredSplitPosition = gsl::narrow_cast<float>(firstLeaves) / gsl::narrow_cast<float>(totalLeaves);
+                pane->_CreateRowColDefinitions();
+            }
+        }
+    });
+}
+
+// Method Description:
 // - Moves the separator between panes, as to resize each child on either size
 //   of the separator. Tries to move a separator in the given direction. The
 //   separator moved is the separator that's closest depth-wise to the

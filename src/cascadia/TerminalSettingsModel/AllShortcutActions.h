@@ -38,6 +38,8 @@
     ON_ALL_ACTIONS(SplitPane)               \
     ON_ALL_ACTIONS(ToggleSplitOrientation)  \
     ON_ALL_ACTIONS(TogglePaneZoom)          \
+    ON_ALL_ACTIONS(EqualizePanes)           \
+    ON_ALL_ACTIONS(ToggleTilingMode)        \
     ON_ALL_ACTIONS(SwitchToTab)             \
     ON_ALL_ACTIONS(AdjustFontSize)          \
     ON_ALL_ACTIONS(ResetFontSize)           \

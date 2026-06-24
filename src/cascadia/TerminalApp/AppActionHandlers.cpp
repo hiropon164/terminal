@@ -317,6 +317,32 @@ namespace winrt::TerminalApp::implementation
         args.Handled(true);
     }
 
+    void TerminalPage::_HandleEqualizePanes(const IInspectable& sender,
+                                            const ActionEventArgs& args)
+    {
+        if (const auto activeTab{ _senderOrFocusedTab(sender) })
+        {
+            // Nothing to equalize when there's only a single pane.
+            if (activeTab->GetLeafPaneCount() > 1)
+            {
+                activeTab->EqualizeSplits();
+            }
+        }
+
+        args.Handled(true);
+    }
+
+    void TerminalPage::_HandleToggleTilingMode(const IInspectable& sender,
+                                               const ActionEventArgs& args)
+    {
+        if (const auto activeTab{ _senderOrFocusedTab(sender) })
+        {
+            activeTab->ToggleAutoTile();
+        }
+
+        args.Handled(true);
+    }
+
     void TerminalPage::_HandleTogglePaneReadOnly(const IInspectable& sender,
                                                  const ActionEventArgs& args)
     {

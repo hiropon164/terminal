@@ -20,6 +20,7 @@ namespace Microsoft.Terminal.Settings.Model
 
         static String SettingsDirectory { get; };
         static String SettingsPath { get; };
+        static String KeybindingsPath { get; };
         static String DefaultSettingsPath { get; };
         static Boolean IsPortableMode { get; };
 

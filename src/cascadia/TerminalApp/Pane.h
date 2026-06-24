@@ -122,6 +122,7 @@ public:
                                                                   const float splitSize,
                                                                   std::shared_ptr<Pane> pane);
     bool ToggleSplitOrientation();
+    void EqualizeSplits();
     float CalcSnappedDimension(const bool widthOrHeight, const float dimension) const;
     std::optional<std::optional<winrt::Microsoft::Terminal::Settings::Model::SplitDirection>> PreCalculateCanSplit(const std::shared_ptr<Pane> target,
                                                                                                                    winrt::Microsoft::Terminal::Settings::Model::SplitDirection splitType,
