@@ -235,6 +235,10 @@ private:
     winrt::Windows::UI::Xaml::Controls::Grid _root{};
     winrt::Windows::UI::Xaml::Controls::Border _borderFirst{};
     winrt::Windows::UI::Xaml::Controls::Border _borderSecond{};
+    // A thin, hit-testable strip straddling the split boundary that lets the
+    // user drag to resize the two child panes with the mouse.
+    winrt::Windows::UI::Xaml::Controls::Border _resizeSeparator{ nullptr };
+    bool _separatorDragging{ false };
 
     PaneResources _themeResources;
 
@@ -315,6 +319,13 @@ private:
     SplitState _convertAutomaticOrDirectionalSplitState(const winrt::Microsoft::Terminal::Settings::Model::SplitDirection& splitType) const;
 
     void _borderTappedHandler(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::TappedRoutedEventArgs& e);
+
+    void _SetupResizeSeparator();
+    void _SeparatorPointerPressed(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+    void _SeparatorPointerMoved(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+    void _SeparatorPointerReleased(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+    void _SeparatorPointerEntered(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+    void _SeparatorPointerExited(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
 
     // Function Description:
     // - Returns true if the given direction can be used with the given split

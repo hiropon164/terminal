@@ -1945,6 +1945,7 @@ void Pane::_ApplySplitDefinitions()
         _firstChild->_ApplySplitDefinitions();
         _secondChild->_ApplySplitDefinitions();
     }
+    _SetupResizeSeparator();
     _UpdateBorders();
 }
 
@@ -3112,4 +3113,129 @@ void Pane::_borderTappedHandler(const winrt::Windows::Foundation::IInspectable& 
 {
     _FocusFirstChild();
     e.Handled(true);
+}
+
+// Method Description:
+// - Creates (lazily) and positions a thin strip on the split boundary that the
+//   user can drag with the mouse to resize the two child panes. Called from
+//   _ApplySplitDefinitions(), which runs after every change to our grid layout
+//   (split, swap, orientation toggle, etc.), so the strip is kept in the right
+//   place and re-added if a tree rebuild removed it from our grid.
+void Pane::_SetupResizeSeparator()
+{
+    if (_IsLeaf())
+    {
+        return;
+    }
+
+    if (_resizeSeparator == nullptr)
+    {
+        _resizeSeparator = Controls::Border{};
+        // A Transparent brush is still hit-test visible (unlike a null brush),
+        // so the strip can receive pointer events while staying invisible.
+        _resizeSeparator.Background(Media::SolidColorBrush{ Colors::Transparent() });
+        _resizeSeparator.PointerPressed({ this, &Pane::_SeparatorPointerPressed });
+        _resizeSeparator.PointerMoved({ this, &Pane::_SeparatorPointerMoved });
+        _resizeSeparator.PointerReleased({ this, &Pane::_SeparatorPointerReleased });
+        _resizeSeparator.PointerCaptureLost({ this, &Pane::_SeparatorPointerReleased });
+        _resizeSeparator.PointerEntered({ this, &Pane::_SeparatorPointerEntered });
+        _resizeSeparator.PointerExited({ this, &Pane::_SeparatorPointerExited });
+    }
+
+    // Ensure the strip is part of our grid (a tree rebuild such as a pane swap
+    // clears _root's children). Appending last keeps it on top of the child
+    // borders so it wins hit-testing along the boundary.
+    uint32_t index{};
+    if (!_root.Children().IndexOf(_resizeSeparator, index))
+    {
+        _root.Children().Append(_resizeSeparator);
+    }
+
+    constexpr auto grabSize = 8.0;
+    if (_splitState == SplitState::Vertical)
+    {
+        // Hug the left edge of the second column (the boundary) and straddle it.
+        Controls::Grid::SetColumn(_resizeSeparator, 1);
+        Controls::Grid::SetRow(_resizeSeparator, 0);
+        _resizeSeparator.HorizontalAlignment(HorizontalAlignment::Left);
+        _resizeSeparator.VerticalAlignment(VerticalAlignment::Stretch);
+        _resizeSeparator.Width(grabSize);
+        _resizeSeparator.Height(std::numeric_limits<double>::quiet_NaN());
+        _resizeSeparator.Margin(ThicknessHelper::FromLengths(-grabSize / 2, 0, 0, 0));
+    }
+    else if (_splitState == SplitState::Horizontal)
+    {
+        Controls::Grid::SetColumn(_resizeSeparator, 0);
+        Controls::Grid::SetRow(_resizeSeparator, 1);
+        _resizeSeparator.VerticalAlignment(VerticalAlignment::Top);
+        _resizeSeparator.HorizontalAlignment(HorizontalAlignment::Stretch);
+        _resizeSeparator.Height(grabSize);
+        _resizeSeparator.Width(std::numeric_limits<double>::quiet_NaN());
+        _resizeSeparator.Margin(ThicknessHelper::FromLengths(0, -grabSize / 2, 0, 0));
+    }
+}
+
+void Pane::_SeparatorPointerPressed(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e)
+{
+    if (_IsLeaf() || _resizeSeparator == nullptr)
+    {
+        return;
+    }
+    _separatorDragging = true;
+    _resizeSeparator.CapturePointer(e.Pointer());
+    _resizeSeparator.Background(Media::SolidColorBrush{ ColorHelper::FromArgb(0x80, 0x80, 0x80, 0x80) });
+    e.Handled(true);
+}
+
+void Pane::_SeparatorPointerMoved(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e)
+{
+    if (!_separatorDragging || _IsLeaf())
+    {
+        return;
+    }
+
+    const auto changeWidth = _splitState == SplitState::Vertical;
+    const auto totalSize = changeWidth ? gsl::narrow_cast<float>(_root.ActualWidth()) :
+                                         gsl::narrow_cast<float>(_root.ActualHeight());
+    if (totalSize <= 0)
+    {
+        return;
+    }
+
+    const auto position = e.GetCurrentPoint(_root).Position();
+    const auto along = changeWidth ? gsl::narrow_cast<float>(position.X) : gsl::narrow_cast<float>(position.Y);
+    _desiredSplitPosition = _ClampSplitPosition(changeWidth, along / totalSize, totalSize);
+    _CreateRowColDefinitions();
+    e.Handled(true);
+}
+
+void Pane::_SeparatorPointerReleased(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e)
+{
+    if (_separatorDragging)
+    {
+        _separatorDragging = false;
+        if (_resizeSeparator != nullptr)
+        {
+            _resizeSeparator.ReleasePointerCapture(e.Pointer());
+            _resizeSeparator.Background(Media::SolidColorBrush{ Colors::Transparent() });
+        }
+        e.Handled(true);
+    }
+}
+
+void Pane::_SeparatorPointerEntered(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& /*e*/)
+{
+    if (_resizeSeparator != nullptr && !_separatorDragging)
+    {
+        // Faint highlight so the draggable boundary is discoverable on hover.
+        _resizeSeparator.Background(Media::SolidColorBrush{ ColorHelper::FromArgb(0x60, 0x80, 0x80, 0x80) });
+    }
+}
+
+void Pane::_SeparatorPointerExited(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& /*e*/)
+{
+    if (_resizeSeparator != nullptr && !_separatorDragging)
+    {
+        _resizeSeparator.Background(Media::SolidColorBrush{ Colors::Transparent() });
+    }
 }
