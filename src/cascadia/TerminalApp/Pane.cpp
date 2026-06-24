@@ -49,6 +49,9 @@ Pane::Pane(IPaneContent content, const bool lastFocused) :
     // through to something else.
     _borderFirst.Tapped({ this, &Pane::_borderTappedHandler });
     _borderSecond.Tapped({ this, &Pane::_borderTappedHandler });
+
+    // Leaf panes can be picked up and moved with an Alt+drag.
+    _SetupMovePaneDrag();
 }
 
 Pane::Pane(std::shared_ptr<Pane> first,
@@ -84,6 +87,35 @@ Pane::Pane(std::shared_ptr<Pane> first,
     // through to something else.
     _borderFirst.Tapped({ this, &Pane::_borderTappedHandler });
     _borderSecond.Tapped({ this, &Pane::_borderTappedHandler });
+}
+
+Pane::~Pane()
+{
+    // The Alt+drag-to-move handlers capture a raw `this`. They're special because
+    // the gesture restructures the whole pane tree and can destroy this Pane
+    // while a pointer is still captured on _borderFirst (which the XAML visual
+    // tree can keep alive slightly longer than this Pane), so a queued pointer
+    // event could otherwise call back into a freed `this`. Remove them here.
+    //
+    // The Tapped and resize-separator handlers also capture `this`, but those
+    // gestures stay within a single Pane and never restructure the tree under an
+    // in-flight pointer, so their elements never outlive this Pane.
+    if (_movePressedHandler)
+    {
+        _borderFirst.RemoveHandler(UIElement::PointerPressedEvent(), _movePressedHandler);
+    }
+    if (_moveMovedHandler)
+    {
+        _borderFirst.RemoveHandler(UIElement::PointerMovedEvent(), _moveMovedHandler);
+    }
+    if (_moveReleasedHandler)
+    {
+        _borderFirst.RemoveHandler(UIElement::PointerReleasedEvent(), _moveReleasedHandler);
+    }
+    if (_moveCaptureLostHandler)
+    {
+        _borderFirst.RemoveHandler(UIElement::PointerCaptureLostEvent(), _moveCaptureLostHandler);
+    }
 }
 
 // Extract the terminal settings from the current (leaf) pane's control
@@ -1450,6 +1482,11 @@ void Pane::_CloseChild(const bool closeFirst)
         // Find what borders need to persist after we close the child
         _borders = _GetCommonBorders();
 
+        // We're becoming a leaf, so make sure the Alt+drag-to-move handlers are
+        // present on our _borderFirst (a pane originally built as a parent never
+        // ran _SetupMovePaneDrag in its constructor). Idempotent if already set.
+        _SetupMovePaneDrag();
+
         // take the control, profile, id and isDefTermSession of the pane that _wasn't_ closed.
         _setPaneContent(remainingChild->_takePaneContent());
         if (!_content)
@@ -2358,6 +2395,11 @@ std::pair<std::shared_ptr<Pane>, std::shared_ptr<Pane>> Pane::_Split(SplitDirect
     _root.RowDefinitions().Clear();
     _CreateRowColDefinitions();
 
+    // Paint an opaque background behind the children. Without this, the moment
+    // we become a parent (e.g. while a new pane is sliding in) the grid has no
+    // brush and the window shows through to whatever is behind it.
+    _root.Background(_themeResources.unfocusedBorderBrush);
+
     _borderFirst.Child(_firstChild->GetRootElement());
     _borderSecond.Child(_secondChild->GetRootElement());
 
@@ -3181,6 +3223,13 @@ void Pane::_SeparatorPointerPressed(const winrt::Windows::Foundation::IInspectab
     {
         return;
     }
+    // Only the left mouse button drives a resize. Leave right/middle/pen/touch
+    // presses unhandled so they aren't turned into a (spurious) resize.
+    if (e.Pointer().PointerDeviceType() != winrt::Windows::Devices::Input::PointerDeviceType::Mouse ||
+        !e.GetCurrentPoint(_resizeSeparator).Properties().IsLeftButtonPressed())
+    {
+        return;
+    }
     _separatorDragging = true;
     _resizeSeparator.CapturePointer(e.Pointer());
     _resizeSeparator.Background(Media::SolidColorBrush{ ColorHelper::FromArgb(0x80, 0x80, 0x80, 0x80) });
@@ -3238,4 +3287,158 @@ void Pane::_SeparatorPointerExited(const winrt::Windows::Foundation::IInspectabl
     {
         _resizeSeparator.Background(Media::SolidColorBrush{ Colors::Transparent() });
     }
+}
+
+// Method Description:
+// - Wires up the pointer handlers used to pick this (leaf) pane up and move it
+//   with an Alt+drag. The handlers are registered with handledEventsToo so we
+//   still see the press even though the TermControl marks it handled for its
+//   own selection logic.
+void Pane::_SetupMovePaneDrag()
+{
+    // Idempotent: the handlers only need to be registered once per Pane. This is
+    // called from the leaf constructor and also when a pane collapses back to a
+    // leaf (see _CloseChild), which may be a pane that was built as a parent and
+    // so never ran this in its constructor.
+    if (_movePressedHandler)
+    {
+        return;
+    }
+    _movePressedHandler = winrt::box_value(winrt::Windows::UI::Xaml::Input::PointerEventHandler{ this, &Pane::_MovePanePointerPressed });
+    _moveMovedHandler = winrt::box_value(winrt::Windows::UI::Xaml::Input::PointerEventHandler{ this, &Pane::_MovePanePointerMoved });
+    _moveReleasedHandler = winrt::box_value(winrt::Windows::UI::Xaml::Input::PointerEventHandler{ this, &Pane::_MovePanePointerReleased });
+    _moveCaptureLostHandler = winrt::box_value(winrt::Windows::UI::Xaml::Input::PointerEventHandler{ this, &Pane::_MovePanePointerCaptureLost });
+    _borderFirst.AddHandler(UIElement::PointerPressedEvent(), _movePressedHandler, true);
+    _borderFirst.AddHandler(UIElement::PointerMovedEvent(), _moveMovedHandler, true);
+    _borderFirst.AddHandler(UIElement::PointerReleasedEvent(), _moveReleasedHandler, true);
+    _borderFirst.AddHandler(UIElement::PointerCaptureLostEvent(), _moveCaptureLostHandler, true);
+}
+
+void Pane::_MovePanePointerPressed(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e)
+{
+    // Only leaf panes can be moved, and only with the left button held while Alt
+    // is down (so we don't interfere with normal terminal mouse interaction).
+    if (!_IsLeaf())
+    {
+        return;
+    }
+    const auto props = e.GetCurrentPoint(_borderFirst).Properties();
+    const auto altDown = (e.KeyModifiers() & winrt::Windows::System::VirtualKeyModifiers::Menu) == winrt::Windows::System::VirtualKeyModifiers::Menu;
+    if (!props.IsLeftButtonPressed() || !altDown)
+    {
+        return;
+    }
+
+    _movePaneDragging = true;
+    _borderFirst.CapturePointer(e.Pointer());
+
+    // Tint the pane so it's obvious which one is being carried.
+    if (_dragHighlight == nullptr)
+    {
+        _dragHighlight = Controls::Border{};
+        _dragHighlight.Background(Media::SolidColorBrush{ ColorHelper::FromArgb(0x60, 0x00, 0x78, 0xD4) });
+        _dragHighlight.IsHitTestVisible(false);
+    }
+    uint32_t index{};
+    if (!_root.Children().IndexOf(_dragHighlight, index))
+    {
+        _root.Children().Append(_dragHighlight);
+    }
+    _dragHighlight.Visibility(Visibility::Visible);
+
+    e.Handled(true);
+}
+
+void Pane::_MovePanePointerMoved(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e)
+{
+    if (!_movePaneDragging)
+    {
+        return;
+    }
+    // Let the Tab move the drag ghost to follow the cursor.
+    MovePaneDragMoved.raise(shared_from_this(), e.GetCurrentPoint(nullptr).Position());
+    e.Handled(true);
+}
+
+void Pane::_MovePanePointerReleased(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e)
+{
+    if (!_movePaneDragging)
+    {
+        return;
+    }
+    _movePaneDragging = false;
+    _borderFirst.ReleasePointerCapture(e.Pointer());
+
+    if (_dragHighlight != nullptr)
+    {
+        _dragHighlight.Visibility(Visibility::Collapsed);
+    }
+
+    // Report the drop location in window coordinates; the owning Tab knows the
+    // whole pane tree and turns this into a target pane + insertion side.
+    const auto dropPoint = e.GetCurrentPoint(nullptr).Position();
+    MovePaneRequested.raise(shared_from_this(), dropPoint);
+    e.Handled(true);
+}
+
+void Pane::_MovePanePointerCaptureLost(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& /*e*/)
+{
+    // A clean release sets _movePaneDragging=false before ReleasePointerCapture,
+    // so if it's still set here the capture was lost some other way (window
+    // deactivation, capture stolen, etc.). Abort the drag and clean up so the
+    // ghost/highlight don't get stranded on screen.
+    if (!_movePaneDragging)
+    {
+        return;
+    }
+    _movePaneDragging = false;
+    if (_dragHighlight != nullptr)
+    {
+        _dragHighlight.Visibility(Visibility::Collapsed);
+    }
+    MovePaneDragCanceled.raise();
+}
+
+// Method Description:
+// - Descends the pane tree to find the leaf pane that contains `pos` (given in
+//   this pane's root-element coordinates) and reports, via `dir`, which edge of
+//   that leaf the point is nearest to. Used to decide where a dropped pane
+//   should be inserted.
+std::shared_ptr<Pane> Pane::LeafAndDirectionAt(winrt::Windows::Foundation::Point pos, SplitDirection& dir)
+{
+    if (_IsLeaf())
+    {
+        const auto w = std::max(1.0, _root.ActualWidth());
+        const auto h = std::max(1.0, _root.ActualHeight());
+        // Split the target along its longer dimension (like an "auto" split),
+        // then pick the side from which half of that axis the cursor is in.
+        if (w >= h)
+        {
+            dir = pos.X < w / 2 ? SplitDirection::Left : SplitDirection::Right;
+        }
+        else
+        {
+            dir = pos.Y < h / 2 ? SplitDirection::Up : SplitDirection::Down;
+        }
+        return shared_from_this();
+    }
+
+    if (_splitState == SplitState::Vertical)
+    {
+        const auto boundary = _desiredSplitPosition * _root.ActualWidth();
+        if (pos.X < boundary)
+        {
+            return _firstChild->LeafAndDirectionAt(pos, dir);
+        }
+        pos.X = gsl::narrow_cast<float>(pos.X - boundary);
+        return _secondChild->LeafAndDirectionAt(pos, dir);
+    }
+
+    const auto boundary = _desiredSplitPosition * _root.ActualHeight();
+    if (pos.Y < boundary)
+    {
+        return _firstChild->LeafAndDirectionAt(pos, dir);
+    }
+    pos.Y = gsl::narrow_cast<float>(pos.Y - boundary);
+    return _secondChild->LeafAndDirectionAt(pos, dir);
 }

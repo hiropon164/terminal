@@ -1961,6 +1961,17 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             return;
         }
 
+        // Alt+left-drag is reserved for picking up and moving the whole pane with
+        // the mouse (handled by the owning Pane). Don't capture the pointer, start
+        // a selection, or mark the event handled here - let it bubble up so the
+        // Pane can take over.
+        if (args.Pointer().PointerDeviceType() == Windows::Devices::Input::PointerDeviceType::Mouse &&
+            args.GetCurrentPoint(*this).Properties().IsLeftButtonPressed() &&
+            ControlKeyStates{ args.KeyModifiers() }.IsAltPressed())
+        {
+            return;
+        }
+
         RestorePointerCursor.raise(*this, nullptr);
 
         _CapturePointer(sender, args);
@@ -2018,6 +2029,12 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         {
             return;
         }
+
+        // NB: We intentionally do NOT suppress selection here for Alt+left.
+        // When a pane move is in progress the Pane has captured the pointer, so
+        // this handler doesn't run at all; and when the terminal owns the drag
+        // (a normal selection), pressing Alt mid-drag should switch to block
+        // selection (upstream behavior), not freeze it.
 
         RestorePointerCursor.raise(*this, nullptr);
 

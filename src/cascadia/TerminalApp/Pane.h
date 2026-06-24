@@ -71,6 +71,8 @@ public:
          const float splitPosition,
          const bool lastFocused = false);
 
+    ~Pane();
+
     std::shared_ptr<Pane> GetActivePane();
     winrt::Microsoft::Terminal::Control::TermControl GetLastFocusedTerminalControl();
     winrt::TerminalApp::IPaneContent GetLastFocusedContent();
@@ -134,6 +136,12 @@ public:
     std::shared_ptr<Pane> AttachPane(std::shared_ptr<Pane> pane,
                                      winrt::Microsoft::Terminal::Settings::Model::SplitDirection splitType);
     std::shared_ptr<Pane> DetachPane(std::shared_ptr<Pane> pane);
+
+    // Given a point relative to this pane's root element, returns the leaf pane
+    // that contains it and sets `dir` to which edge of that leaf the point is
+    // closest to (used by mouse drag-to-move to decide the insertion side).
+    std::shared_ptr<Pane> LeafAndDirectionAt(winrt::Windows::Foundation::Point pos,
+                                             winrt::Microsoft::Terminal::Settings::Model::SplitDirection& dir);
 
     int GetLeafPaneCount() const noexcept;
 
@@ -224,6 +232,17 @@ public:
     til::event<gotFocusArgs> GotFocus;
     til::event<winrt::delegate<std::shared_ptr<Pane>>> LostFocus;
     til::event<winrt::delegate<std::shared_ptr<Pane>>> Detached;
+    // Raised while the user is Alt+dragging this (leaf) pane (the Point is the
+    // current cursor position in window coordinates). The Tab uses it to make a
+    // ghost follow the cursor.
+    til::event<winrt::delegate<std::shared_ptr<Pane>, winrt::Windows::Foundation::Point>> MovePaneDragMoved;
+    // Raised when an Alt+drag is aborted without a drop (e.g. the pointer capture
+    // was lost), so the Tab can tear down the drag ghost.
+    til::event<winrt::delegate<>> MovePaneDragCanceled;
+    // Raised when the user finishes an Alt+drag of this (leaf) pane. The second
+    // argument is the drop position in window coordinates; the Tab resolves it
+    // to a target pane + insertion side and performs the move.
+    til::event<winrt::delegate<std::shared_ptr<Pane>, winrt::Windows::Foundation::Point>> MovePaneRequested;
 
 private:
     struct PanePoint;
@@ -239,6 +258,16 @@ private:
     // user drag to resize the two child panes with the mouse.
     winrt::Windows::UI::Xaml::Controls::Border _resizeSeparator{ nullptr };
     bool _separatorDragging{ false };
+    // True while the user is Alt+dragging this leaf pane to move it elsewhere.
+    bool _movePaneDragging{ false };
+    // A translucent tint shown over this leaf's content while it is being dragged.
+    winrt::Windows::UI::Xaml::Controls::Border _dragHighlight{ nullptr };
+    // The handlers registered on _borderFirst for the Alt+drag-to-move gesture.
+    // Kept so they can be removed in the destructor (they capture a raw `this`).
+    winrt::Windows::Foundation::IInspectable _movePressedHandler{ nullptr };
+    winrt::Windows::Foundation::IInspectable _moveMovedHandler{ nullptr };
+    winrt::Windows::Foundation::IInspectable _moveReleasedHandler{ nullptr };
+    winrt::Windows::Foundation::IInspectable _moveCaptureLostHandler{ nullptr };
 
     PaneResources _themeResources;
 
@@ -326,6 +355,12 @@ private:
     void _SeparatorPointerReleased(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
     void _SeparatorPointerEntered(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
     void _SeparatorPointerExited(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+
+    void _SetupMovePaneDrag();
+    void _MovePanePointerPressed(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+    void _MovePanePointerMoved(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+    void _MovePanePointerReleased(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
+    void _MovePanePointerCaptureLost(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
 
     // Function Description:
     // - Returns true if the given direction can be used with the given split

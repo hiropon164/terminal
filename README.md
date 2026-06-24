@@ -31,10 +31,32 @@ to resize the two adjacent panes live (clamped to their minimum sizes). The
 strip is invisible at rest and faintly highlights on hover. Upstream Windows
 Terminal only supports resizing panes with the keyboard (`Alt+Shift+arrows`).
 
+#### 3. Mouse drag-to-move panes (`Alt`+drag)
+
+Hold **`Alt`** and drag a pane onto another pane to move it there. While
+dragging, the picked-up pane is tinted and a translucent, pane-sized ghost
+follows the cursor. On drop, the target pane is split along its longer axis and
+the moved pane is inserted on the half (top/bottom or left/right) you released
+over. Releasing outside the pane area cancels the move.
+
+> Because `Alt`+left-drag is repurposed for moving panes, the terminal's
+> `Alt`+drag **block (rectangular) selection** is not available via that gesture
+> in this fork.
+
+#### 4. Dedicated `keybindings.json`
+
+Key bindings can be managed in a separate `keybindings.json` file in the app's
+`LocalState` folder. Unlike settings *fragments*, this file is allowed to define
+key bindings, and it is layered **on top of** `settings.json` (so it takes
+precedence). Edit it directly to keep your key bindings separate from the rest
+of your settings.
+
 #### Keybindings
 
-`equalizePanes` is **not bound to any key by default** — bind it yourself in
-`settings.json` (or via the Settings UI → Actions):
+Drag-to-resize and `Alt`+drag-to-move are mouse gestures and need no key
+binding. The only new keyboard action is `equalizePanes`, which is **not bound
+to any key by default** — bind it yourself in `settings.json` (or via the
+Settings UI → Actions):
 
 ```jsonc
 {

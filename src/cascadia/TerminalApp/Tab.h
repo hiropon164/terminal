@@ -167,6 +167,12 @@ namespace winrt::TerminalApp::implementation
         std::shared_ptr<Pane> _activePane{ nullptr };
         std::shared_ptr<Pane> _zoomedPane{ nullptr };
 
+        // A translucent, pane-sized ghost that follows the cursor while a pane is
+        // being Alt+dragged to a new location. _moveGhostActive is true once the
+        // ghost has been set up for the current drag (so per-move work is skipped).
+        winrt::Windows::UI::Xaml::Controls::Border _moveGhost{ nullptr };
+        winrt::Windows::UI::Xaml::Media::TranslateTransform _moveGhostTransform{ nullptr };
+        bool _moveGhostActive{ false };
 
         winrt::Microsoft::Terminal::Settings::Model::IconStyle _lastIconStyle;
         winrt::hstring _lastIconPath{};
@@ -225,6 +231,11 @@ namespace winrt::TerminalApp::implementation
         void _DetachEventHandlersFromContent(const uint32_t paneId);
         void _AttachEventHandlersToContent(const uint32_t paneId, const winrt::TerminalApp::IPaneContent& content);
         void _AttachEventHandlersToPane(std::shared_ptr<Pane> pane);
+
+        void _OnMovePaneDragMoved(std::shared_ptr<Pane> src, winrt::Windows::Foundation::Point windowPoint);
+        void _OnMovePaneRequested(std::shared_ptr<Pane> src, winrt::Windows::Foundation::Point windowPoint);
+        void _MovePaneToTarget(std::shared_ptr<Pane> src, uint32_t targetId, winrt::Microsoft::Terminal::Settings::Model::SplitDirection dir);
+        void _RemoveMoveGhost();
 
         void _UpdateActivePane(std::shared_ptr<Pane> pane);
         void _UpdateMenuItemStates();

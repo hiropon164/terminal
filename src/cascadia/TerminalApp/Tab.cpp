@@ -1471,12 +1471,32 @@ namespace winrt::TerminalApp::implementation
             }
         });
 
+        // Pick up Alt+drag move requests from this (leaf) pane.
+        auto moveToken = pane->MovePaneRequested([weakThis](std::shared_ptr<Pane> src, winrt::Windows::Foundation::Point windowPoint) {
+            if (auto tab{ weakThis.get() })
+            {
+                tab->_OnMovePaneRequested(src, windowPoint);
+            }
+        });
+        auto moveDragToken = pane->MovePaneDragMoved([weakThis](std::shared_ptr<Pane> src, winrt::Windows::Foundation::Point windowPoint) {
+            if (auto tab{ weakThis.get() })
+            {
+                tab->_OnMovePaneDragMoved(src, windowPoint);
+            }
+        });
+        auto moveCancelToken = pane->MovePaneDragCanceled([weakThis]() {
+            if (auto tab{ weakThis.get() })
+            {
+                tab->_RemoveMoveGhost();
+            }
+        });
+
         // box the event token so that we can give a reference to it in the
         // event handler.
         auto detachedToken = std::make_shared<winrt::event_token>();
         // Add a Detached event handler to the Pane to clean up tab state
         // and other event handlers when a pane is removed from this tab.
-        *detachedToken = pane->Detached([weakThis, weakPane, gotFocusToken, lostFocusToken, closedToken, detachedToken](std::shared_ptr<Pane> /*sender*/) {
+        *detachedToken = pane->Detached([weakThis, weakPane, gotFocusToken, lostFocusToken, closedToken, moveToken, moveDragToken, moveCancelToken, detachedToken](std::shared_ptr<Pane> /*sender*/) {
             // Make sure we do this at most once
             if (auto pane{ weakPane.lock() })
             {
@@ -1484,6 +1504,9 @@ namespace winrt::TerminalApp::implementation
                 pane->GotFocus(gotFocusToken);
                 pane->LostFocus(lostFocusToken);
                 pane->Closed(closedToken);
+                pane->MovePaneRequested(moveToken);
+                pane->MovePaneDragMoved(moveDragToken);
+                pane->MovePaneDragCanceled(moveCancelToken);
 
                 if (auto tab{ weakThis.get() })
                 {
@@ -1500,6 +1523,257 @@ namespace winrt::TerminalApp::implementation
                 }
             }
         });
+    }
+
+    // Method Description:
+    // - While a pane is being Alt+dragged, keeps a translucent, pane-sized ghost
+    //   centered under the cursor so the move feels tactile.
+    void Tab::_OnMovePaneDragMoved(std::shared_ptr<Pane> src, winrt::Windows::Foundation::Point windowPoint)
+    {
+        ASSERT_UI_THREAD();
+
+        if (!src || !_rootPane)
+        {
+            return;
+        }
+
+        const auto rootElement = _rootPane->GetRootElement();
+
+        // The ghost's parent, size, and visibility are invariant for the duration
+        // of one drag, so only set them up once (on the first move) and then just
+        // move the transform on subsequent moves.
+        if (!_moveGhostActive)
+        {
+            // Larger than any realistic pane grid, so the ghost spans every cell.
+            static constexpr int32_t spanAllCells = 99;
+
+            // Lazily create the ghost; it lives in the tab root grid and is
+            // positioned with a transform.
+            if (_moveGhost == nullptr)
+            {
+                _moveGhost = winrt::Windows::UI::Xaml::Controls::Border{};
+                _moveGhost.Background(winrt::Windows::UI::Xaml::Media::SolidColorBrush{ winrt::Windows::UI::ColorHelper::FromArgb(0x44, 0x00, 0x78, 0xD4) });
+                _moveGhost.BorderBrush(winrt::Windows::UI::Xaml::Media::SolidColorBrush{ winrt::Windows::UI::ColorHelper::FromArgb(0xCC, 0x00, 0x78, 0xD4) });
+                _moveGhost.BorderThickness({ 2, 2, 2, 2 });
+                _moveGhost.IsHitTestVisible(false);
+                _moveGhost.HorizontalAlignment(winrt::Windows::UI::Xaml::HorizontalAlignment::Left);
+                _moveGhost.VerticalAlignment(winrt::Windows::UI::Xaml::VerticalAlignment::Top);
+                _moveGhostTransform = winrt::Windows::UI::Xaml::Media::TranslateTransform{};
+                _moveGhost.RenderTransform(_moveGhostTransform);
+                winrt::Windows::UI::Xaml::Controls::Grid::SetColumnSpan(_moveGhost, spanAllCells);
+                winrt::Windows::UI::Xaml::Controls::Grid::SetRowSpan(_moveGhost, spanAllCells);
+            }
+
+            uint32_t index{};
+            if (!rootElement.Children().IndexOf(_moveGhost, index))
+            {
+                // If the ghost is still parented to a different element (e.g. a
+                // drag that ended without a clean release), detach it first so
+                // that re-parenting doesn't throw.
+                if (const auto parentPanel = _moveGhost.Parent().try_as<winrt::Windows::UI::Xaml::Controls::Panel>())
+                {
+                    uint32_t existing{};
+                    if (parentPanel.Children().IndexOf(_moveGhost, existing))
+                    {
+                        parentPanel.Children().RemoveAt(existing);
+                    }
+                }
+                rootElement.Children().Append(_moveGhost);
+            }
+
+            // Size the ghost to the dragged pane.
+            _moveGhost.Width(src->GetRootElement().ActualWidth());
+            _moveGhost.Height(src->GetRootElement().ActualHeight());
+            _moveGhost.Visibility(winrt::Windows::UI::Xaml::Visibility::Visible);
+            _moveGhostActive = true;
+        }
+
+        // Center it under the cursor, in the root grid's coordinate space.
+        const auto ghostW = _moveGhost.Width();
+        const auto ghostH = _moveGhost.Height();
+        const auto rootOrigin = rootElement.TransformToVisual(nullptr).TransformPoint({ 0, 0 });
+        _moveGhostTransform.X(windowPoint.X - rootOrigin.X - ghostW / 2);
+        _moveGhostTransform.Y(windowPoint.Y - rootOrigin.Y - ghostH / 2);
+    }
+
+    // Method Description:
+    // - Tears down the Alt+drag ghost (on drop or on an aborted drag).
+    void Tab::_RemoveMoveGhost()
+    {
+        ASSERT_UI_THREAD();
+
+        _moveGhostActive = false;
+        if (_moveGhost == nullptr)
+        {
+            return;
+        }
+        // Detach it from its parent so it can be re-parented cleanly next drag.
+        if (const auto parentPanel = _moveGhost.Parent().try_as<winrt::Windows::UI::Xaml::Controls::Panel>())
+        {
+            uint32_t idx{};
+            if (parentPanel.Children().IndexOf(_moveGhost, idx))
+            {
+                parentPanel.Children().RemoveAt(idx);
+            }
+        }
+        _moveGhost.Visibility(winrt::Windows::UI::Xaml::Visibility::Collapsed);
+    }
+
+    // Method Description:
+    // - Handles the end of an Alt+drag of a pane: resolves the drop location to a
+    //   target leaf pane and insertion side, then performs the move.
+    // Arguments:
+    // - src: the pane that was dragged
+    // - windowPoint: the drop position, in window coordinates
+    void Tab::_OnMovePaneRequested(std::shared_ptr<Pane> src, winrt::Windows::Foundation::Point windowPoint)
+    {
+        ASSERT_UI_THREAD();
+
+        // The drag is over - tear down the ghost.
+        _RemoveMoveGhost();
+
+        if (!src || !_rootPane || src == _rootPane)
+        {
+            return;
+        }
+
+        // Translate the window-space drop point into the root pane's coordinate
+        // space (pane layout only translates, so subtracting the root's origin is
+        // sufficient).
+        const auto rootElement = _rootPane->GetRootElement();
+        const auto rootOrigin = rootElement.TransformToVisual(nullptr).TransformPoint({ 0, 0 });
+        const winrt::Windows::Foundation::Point relative{ windowPoint.X - rootOrigin.X, windowPoint.Y - rootOrigin.Y };
+
+        // Ignore drops outside the pane area (e.g. released over the tab strip or
+        // past the window edge) - treat them as a cancelled drag.
+        if (relative.X < 0 || relative.Y < 0 ||
+            relative.X > rootElement.ActualWidth() || relative.Y > rootElement.ActualHeight())
+        {
+            return;
+        }
+
+        auto dir{ winrt::Microsoft::Terminal::Settings::Model::SplitDirection::Right };
+        const auto target = _rootPane->LeafAndDirectionAt(relative, dir);
+        if (target && target != src)
+        {
+            if (const auto targetId = target->Id())
+            {
+                // Defer the tree surgery: we're still inside the dragged pane's
+                // pointer-released handler, and restructuring the tree now would
+                // reparent the very element that raised the event.
+                if (const auto dispatcher{ winrt::Windows::System::DispatcherQueue::GetForCurrentThread() })
+                {
+                    auto weakThis{ get_weak() };
+                    const auto id = targetId.value();
+                    dispatcher.TryEnqueue([weakThis, src, id, dir]() {
+                        if (auto tab{ weakThis.get() })
+                        {
+                            tab->_MovePaneToTarget(src, id, dir);
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    // Method Description:
+    // - Moves `src` out of its current spot and re-inserts it on the `dir` side of
+    //   the pane identified by `targetId`, re-wiring the tab event handlers that
+    //   DetachPane tore down.
+    // - The target is resolved by id *after* the detach: when src and the target
+    //   are siblings, detaching src collapses the target's content up into their
+    //   parent (which adopts the target's id), leaving the original target object
+    //   stale. FindPane always returns the live pane carrying that id.
+    void Tab::_MovePaneToTarget(std::shared_ptr<Pane> src, uint32_t targetId, winrt::Microsoft::Terminal::Settings::Model::SplitDirection dir)
+    {
+        ASSERT_UI_THREAD();
+
+        if (!_rootPane)
+        {
+            return;
+        }
+
+        // Detach the dragged pane (its sibling collapses into its place). This
+        // raises Detached, which removes the tab's handlers for the subtree.
+        const auto detached = _rootPane->DetachPane(src);
+        if (!detached)
+        {
+            return;
+        }
+
+        // Detaching can, in edge cases, close the tab's root out from under us.
+        if (!_rootPane)
+        {
+            return;
+        }
+
+        const auto target = _rootPane->FindPane(targetId);
+        if (!target || target == detached)
+        {
+            return;
+        }
+
+        // AttachPane splits the (leaf) target into a parent whose two children are
+        // a brand-new leaf holding the target's content and the dragged pane. The
+        // target's id needs to follow its content onto that new leaf.
+        const auto savedTargetId = target->Id();
+
+        // Splice it back in on the requested side of the target pane.
+        const auto targetContentLeaf = target->AttachPane(detached, dir);
+
+        if (savedTargetId && targetContentLeaf)
+        {
+            targetContentLeaf->Id(savedTargetId.value());
+        }
+
+        // Re-wire the handlers/content that DetachPane removed from the dragged
+        // subtree (its ids are kept).
+        detached->WalkTree([&](const auto& p) {
+            _AttachEventHandlersToPane(p);
+            if (p->_IsLeaf() && p->Id())
+            {
+                if (const auto& content{ p->GetContent() })
+                {
+                    _AttachEventHandlersToContent(p->Id().value(), content);
+                }
+            }
+        });
+
+        // The target's new content leaf is brand new and has no tab handlers yet;
+        // without this it (and the move/drag gestures on it) would stop working
+        // after the first move.
+        if (targetContentLeaf)
+        {
+            targetContentLeaf->WalkTree([&](const auto& p) {
+                _AttachEventHandlersToPane(p);
+                if (p->_IsLeaf() && p->Id())
+                {
+                    if (const auto& content{ p->GetContent() })
+                    {
+                        _AttachEventHandlersToContent(p->Id().value(), content);
+                    }
+                }
+            });
+        }
+
+        // Restate the broadcast-input invariant on the spliced-in panes, the same
+        // way SplitPane/AttachPane do (rather than relying on _Split copying it).
+        detached->EnableBroadcast(_tabStatus.IsInputBroadcastActive());
+        if (targetContentLeaf)
+        {
+            targetContentLeaf->EnableBroadcast(_tabStatus.IsInputBroadcastActive());
+        }
+
+        // Make the moved pane active. GetActivePane() only returns a pane when
+        // something in the subtree is already marked _lastActive, so it can be
+        // null if a non-focused pane was dragged - fall back to the (leaf) pane
+        // itself. Passing null here would null-deref in _UpdateActivePane.
+        auto toActivate = detached->GetActivePane();
+        if (!toActivate)
+        {
+            toActivate = detached;
+        }
+        _UpdateActivePane(toActivate);
     }
 
     void Tab::_AppendMoveMenuItems(winrt::Windows::UI::Xaml::Controls::MenuFlyout flyout)
@@ -2007,8 +2281,9 @@ namespace winrt::TerminalApp::implementation
     }
 
     // Method Description:
-    // - Resets every split in this tab's pane tree to an even 50/50 division,
-    //   tiling all panes to equal sizes.
+    // - Resizes every split in this tab's pane tree so all leaf panes end up with
+    //   an equal area. Each split is weighted by the number of leaf panes on each
+    //   side (not a flat 50/50), so deeper panes still come out evenly sized.
     // Arguments:
     // - <none>
     // Return Value:
