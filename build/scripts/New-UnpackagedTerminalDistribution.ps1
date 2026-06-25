@@ -119,6 +119,24 @@ $filesToCopyFromXaml | ForEach-Object {
 } | Copy-Item -Recurse -Destination $terminalAppPath
 
 ########
+# WebView2 runtime
+########
+# The browser pane uses the WebView2 control. The repo otherwise "fakes" the
+# WebView2 dependency (winmd reference only) and ships no loader, so copy the
+# loader + the WinRT Core projection in explicitly so the distribution is
+# self-contained.
+$webview2Pkg = Get-ChildItem (Join-Path $PSScriptRoot "..\..\packages") -Directory -Filter "Microsoft.Web.WebView2.*" -EA:SilentlyContinue | Sort-Object Name | Select-Object -Last 1
+If ($webview2Pkg) {
+    $webview2Dlls = @(
+        (Join-Path $webview2Pkg.FullName "runtimes\win-$architecture\native\WebView2Loader.dll"),
+        (Join-Path $webview2Pkg.FullName "runtimes\win-$architecture\native_uap\Microsoft.Web.WebView2.Core.dll")
+    )
+    ForEach ($dll in $webview2Dlls) {
+        If (Test-Path $dll) { Copy-Item $dll -Destination $terminalAppPath -Force }
+    }
+}
+
+########
 # Resource Management
 ########
 

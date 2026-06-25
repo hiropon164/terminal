@@ -723,6 +723,9 @@
   <data name="SelectFileBrowserDriveCommandKey" xml:space="preserve">
     <value>File browser: select drive</value>
   </data>
+  <data name="OpenBrowserPaneCommandKey" xml:space="preserve">
+    <value>Open browser pane</value>
+  </data>
   <data name="SelectOutputNextCommandKey" xml:space="preserve">
     <value>Select next command output</value>
   </data>

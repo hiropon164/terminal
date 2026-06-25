@@ -114,6 +114,7 @@
     ON_ALL_ACTIONS(OpenScratchpad)          \
     ON_ALL_ACTIONS(OpenFileBrowser)         \
     ON_ALL_ACTIONS(SelectFileBrowserDrive)  \
+    ON_ALL_ACTIONS(OpenBrowserPane)         \
     ON_ALL_ACTIONS(OpenAbout)               \
     ON_ALL_ACTIONS(QuickFix)                \
     ON_ALL_ACTIONS(OpenCWD)                 \

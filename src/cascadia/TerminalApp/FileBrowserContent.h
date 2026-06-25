@@ -49,13 +49,17 @@ namespace winrt::TerminalApp::implementation
         std::vector<std::filesystem::path> _entries;
         winrt::hstring _title{ L"Files" };
         bool _showingDrives{ false };
+        bool _initialFocusDone{ false };
+        // Bumped on every preview request so a slow async image load can detect it
+        // is stale and not clobber a newer selection.
+        uint64_t _previewGeneration{ 0 };
 
         void _Populate();
         void _Navigate(const std::filesystem::path& dir);
         void _OpenSelected();
         void _GoUp();
         void _LoadPreview(const std::filesystem::path& file);
-        winrt::fire_and_forget _LoadImage(std::filesystem::path file);
+        winrt::fire_and_forget _LoadImage(std::filesystem::path file, uint64_t generation);
         void _UpdateTitle();
 
         void _OnKeyDown(const winrt::Windows::Foundation::IInspectable& sender,

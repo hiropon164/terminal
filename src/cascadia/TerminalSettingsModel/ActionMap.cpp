@@ -114,6 +114,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
                 { ShortcutAction::OpenScratchpad, USES_RESOURCE(L"OpenScratchpadKey") },
                 { ShortcutAction::OpenFileBrowser, USES_RESOURCE(L"OpenFileBrowserCommandKey") },
                 { ShortcutAction::SelectFileBrowserDrive, USES_RESOURCE(L"SelectFileBrowserDriveCommandKey") },
+                { ShortcutAction::OpenBrowserPane, USES_RESOURCE(L"OpenBrowserPaneCommandKey") },
                 { ShortcutAction::OpenSettings, USES_RESOURCE(L"OpenSettingsUICommandKey") },
                 { ShortcutAction::OpenSystemMenu, USES_RESOURCE(L"OpenSystemMenuCommandKey") },
                 { ShortcutAction::OpenTabColorPicker, USES_RESOURCE(L"OpenTabColorPickerCommandKey") },

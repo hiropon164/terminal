@@ -168,6 +168,7 @@
       <DependentUpon>TerminalPaneContent.idl</DependentUpon>
     </ClInclude>
     <ClInclude Include="FileBrowserContent.h" />
+    <ClInclude Include="BrowserContent.h" />
     <ClInclude Include="SnippetsPaneContent.h">
       <DependentUpon>SnippetsPaneContent.xaml</DependentUpon>
     </ClInclude>
@@ -282,6 +283,7 @@
       <DependentUpon>TerminalPaneContent.idl</DependentUpon>
     </ClCompile>
     <ClCompile Include="FileBrowserContent.cpp" />
+    <ClCompile Include="BrowserContent.cpp" />
     <ClCompile Include="SnippetsPaneContent.cpp">
       <DependentUpon>SnippetsPaneContent.xaml</DependentUpon>
     </ClCompile>

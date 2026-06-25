@@ -85,7 +85,14 @@ namespace winrt::TerminalApp::implementation
         _list.Loaded([weak = get_weak()](auto&&, auto&&) {
             if (auto self = weak.get())
             {
-                self->_list.Focus(winrt::Windows::UI::Xaml::FocusState::Programmatic);
+                // Only on first display - Loaded also fires when the pane is
+                // re-parented (moved/unzoomed), and we don't want to steal focus
+                // from whatever pane the user is actually using then.
+                if (!self->_initialFocusDone)
+                {
+                    self->_initialFocusDone = true;
+                    self->_list.Focus(winrt::Windows::UI::Xaml::FocusState::Programmatic);
+                }
             }
         });
         // Register with handledEventsToo so we still see Enter/Backspace even if
@@ -142,42 +149,44 @@ namespace winrt::TerminalApp::implementation
             }
             auto dispatcher = winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
             auto deferral = e.GetDeferral();
-            winrt::Windows::Foundation::Collections::IVectorView<winrt::Windows::Storage::IStorageItem> items{ nullptr };
+            // Everything below is wrapped so a thrown exception can neither escape
+            // the fire_and_forget (which would terminate the process) nor skip
+            // deferral.Complete() (which would dangle the drag operation).
             try
             {
-                items = co_await e.DataView().GetStorageItemsAsync();
+                auto items = co_await e.DataView().GetStorageItemsAsync();
+                co_await wil::resume_foreground(dispatcher);
+                if (items && items.Size() > 0)
+                {
+                    fs::path p{ items.GetAt(0).Path().c_str() };
+                    std::error_code ec;
+                    if (fs::is_directory(p, ec))
+                    {
+                        self->_Navigate(p);
+                    }
+                    else
+                    {
+                        self->_Navigate(p.parent_path());
+                        // Select the dropped file and preview it.
+                        auto wanted = p.filename().wstring();
+                        std::transform(wanted.begin(), wanted.end(), wanted.begin(), ::towlower);
+                        for (size_t i = 0; i < self->_entries.size(); ++i)
+                        {
+                            auto name = self->_entries[i].filename().wstring();
+                            std::transform(name.begin(), name.end(), name.begin(), ::towlower);
+                            if (name == wanted)
+                            {
+                                self->_list.SelectedIndex(static_cast<int32_t>(i));
+                                self->_LoadPreview(self->_entries[i]);
+                                break;
+                            }
+                        }
+                    }
+                    self->_list.Focus(winrt::Windows::UI::Xaml::FocusState::Programmatic);
+                }
             }
             catch (...)
             {
-            }
-            co_await wil::resume_foreground(dispatcher);
-            if (items && items.Size() > 0)
-            {
-                fs::path p{ items.GetAt(0).Path().c_str() };
-                std::error_code ec;
-                if (fs::is_directory(p, ec))
-                {
-                    self->_Navigate(p);
-                }
-                else
-                {
-                    self->_Navigate(p.parent_path());
-                    // Select the dropped file and preview it.
-                    auto wanted = p.filename().wstring();
-                    std::transform(wanted.begin(), wanted.end(), wanted.begin(), ::towlower);
-                    for (size_t i = 0; i < self->_entries.size(); ++i)
-                    {
-                        auto name = self->_entries[i].filename().wstring();
-                        std::transform(name.begin(), name.end(), name.begin(), ::towlower);
-                        if (name == wanted)
-                        {
-                            self->_list.SelectedIndex(static_cast<int32_t>(i));
-                            self->_LoadPreview(self->_entries[i]);
-                            break;
-                        }
-                    }
-                }
-                self->_list.Focus(winrt::Windows::UI::Xaml::FocusState::Programmatic);
             }
             deferral.Complete();
         });
@@ -218,6 +227,10 @@ namespace winrt::TerminalApp::implementation
         _entries.push_back(atDriveRoot ? fs::path{} : _cwd.parent_path());
         _list.Items().Append(winrt::box_value(L"../"));
 
+        // Bound the listing so a pathological directory (e.g. a huge node_modules)
+        // can't freeze the UI thread while enumerating + inserting items.
+        constexpr size_t maxEntries = 5000;
+        bool truncated = false;
         std::vector<fs::path> dirs;
         std::vector<fs::path> files;
         if (fs::is_directory(_cwd, ec))
@@ -226,6 +239,11 @@ namespace winrt::TerminalApp::implementation
                  !ec && it != fs::directory_iterator{};
                  it.increment(ec))
             {
+                if (dirs.size() + files.size() >= maxEntries)
+                {
+                    truncated = true;
+                    break;
+                }
                 std::error_code typeEc;
                 if (it->is_directory(typeEc))
                 {
@@ -257,6 +275,12 @@ namespace winrt::TerminalApp::implementation
         {
             _entries.push_back(f);
             _list.Items().Append(winrt::box_value(winrt::hstring{ f.filename().wstring() }));
+        }
+
+        if (truncated)
+        {
+            // Non-selectable marker (no matching _entries item, so Enter is a no-op).
+            _list.Items().Append(winrt::box_value(winrt::hstring{ L"[only first " + std::to_wstring(maxEntries) + L" items shown]" }));
         }
 
         _pathText.Text(winrt::hstring{ _cwd.wstring() });
@@ -337,6 +361,9 @@ namespace winrt::TerminalApp::implementation
 
     void FileBrowserContent::_LoadPreview(const fs::path& file)
     {
+        // Invalidate any in-flight image load (it will see the bumped generation).
+        const auto generation = ++_previewGeneration;
+
         // Pick the image viewer for known image types, otherwise the text viewer.
         auto ext = file.extension().wstring();
         std::transform(ext.begin(), ext.end(), ext.begin(), ::towlower);
@@ -345,7 +372,7 @@ namespace winrt::TerminalApp::implementation
         };
         if (imageExts.count(ext) != 0)
         {
-            _LoadImage(file);
+            _LoadImage(file, generation);
             return;
         }
 
@@ -369,21 +396,41 @@ namespace winrt::TerminalApp::implementation
         in.read(buf.data(), static_cast<std::streamsize>(buf.size()));
         buf.resize(static_cast<size_t>(in.gcount()));
 
-        // Treat content with NUL bytes as binary - don't dump it as text.
-        if (buf.find('\0') != std::string::npos)
-        {
-            _preview.Text(winrt::hstring{ L"[binary file - " + std::to_wstring(ec ? 0 : size) + L" bytes]" });
-            return;
-        }
-
+        const auto truncatedNote = (!ec && size > cap) ? winrt::hstring{ L"\r\n\r\n[truncated - showing first 512 KB]" } : winrt::hstring{};
         try
         {
-            auto text = winrt::to_hstring(buf);
-            if (!ec && size > cap)
+            const auto u = [](char c) { return static_cast<unsigned char>(c); };
+            if (buf.size() >= 2 && u(buf[0]) == 0xFF && u(buf[1]) == 0xFE)
             {
-                text = text + L"\r\n\r\n[truncated - showing first 512 KB]";
+                // UTF-16 LE (e.g. PowerShell redirected output) - decode directly.
+                std::wstring_view w{ reinterpret_cast<const wchar_t*>(buf.data() + 2), (buf.size() - 2) / 2 };
+                _preview.Text(winrt::hstring{ w } + truncatedNote);
             }
-            _preview.Text(text);
+            else if (buf.size() >= 2 && u(buf[0]) == 0xFE && u(buf[1]) == 0xFF)
+            {
+                // UTF-16 BE - byte-swap then decode.
+                std::wstring w;
+                w.reserve((buf.size() - 2) / 2);
+                for (size_t i = 2; i + 1 < buf.size(); i += 2)
+                {
+                    w.push_back(static_cast<wchar_t>((u(buf[i]) << 8) | u(buf[i + 1])));
+                }
+                _preview.Text(winrt::hstring{ w } + truncatedNote);
+            }
+            else
+            {
+                std::string_view sv{ buf };
+                if (sv.size() >= 3 && u(sv[0]) == 0xEF && u(sv[1]) == 0xBB && u(sv[2]) == 0xBF)
+                {
+                    sv.remove_prefix(3); // strip UTF-8 BOM
+                }
+                if (sv.find('\0') != std::string_view::npos)
+                {
+                    _preview.Text(winrt::hstring{ L"[binary file - " + std::to_wstring(ec ? 0 : size) + L" bytes]" });
+                    return;
+                }
+                _preview.Text(winrt::to_hstring(std::string{ sv }) + truncatedNote);
+            }
         }
         catch (...)
         {
@@ -391,15 +438,20 @@ namespace winrt::TerminalApp::implementation
         }
     }
 
-    winrt::fire_and_forget FileBrowserContent::_LoadImage(fs::path file)
+    winrt::fire_and_forget FileBrowserContent::_LoadImage(fs::path file, uint64_t generation)
     {
         auto self = get_strong();
         auto dispatcher = winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
 
-        // Read the file with raw IO so any path works (no app-container sandbox).
-        std::vector<uint8_t> bytes;
+        // Do the (potentially large/slow) disk read and stream build off the UI
+        // thread so previewing a big image doesn't freeze the terminal.
+        co_await winrt::resume_background();
+
+        winrt::Windows::Storage::Streams::InMemoryRandomAccessStream stream{ nullptr };
+        bool ok = false;
         try
         {
+            std::vector<uint8_t> bytes;
             std::ifstream in{ file, std::ios::binary | std::ios::ate };
             if (in)
             {
@@ -414,33 +466,49 @@ namespace winrt::TerminalApp::implementation
                 in.read(reinterpret_cast<char*>(bytes.data()), sz);
                 bytes.resize(static_cast<size_t>(in.gcount()));
             }
+            if (!bytes.empty())
+            {
+                winrt::Windows::Storage::Streams::InMemoryRandomAccessStream s;
+                winrt::Windows::Storage::Streams::DataWriter writer{ s };
+                writer.WriteBytes(winrt::array_view<uint8_t const>{ bytes.data(), bytes.data() + bytes.size() });
+                co_await writer.StoreAsync();
+                writer.DetachStream();
+                s.Seek(0);
+                stream = s;
+                ok = true;
+            }
         }
         catch (...)
         {
+            ok = false;
         }
 
-        if (bytes.empty())
+        // Back to the UI thread to touch XAML.
+        co_await wil::resume_foreground(dispatcher);
+
+        // A newer selection happened while we were loading - don't clobber it.
+        if (generation != _previewGeneration)
+        {
+            co_return;
+        }
+
+        if (!ok)
         {
             _image.Visibility(winrt::Windows::UI::Xaml::Visibility::Collapsed);
+            _image.Source(nullptr);
             _preview.Visibility(winrt::Windows::UI::Xaml::Visibility::Visible);
             _preview.Text(L"[unable to read image]");
             co_return;
         }
 
-        winrt::Windows::Storage::Streams::InMemoryRandomAccessStream stream;
-        winrt::Windows::Storage::Streams::DataWriter writer{ stream };
-        writer.WriteBytes(winrt::array_view<uint8_t const>{ bytes.data(), bytes.data() + bytes.size() });
-        co_await writer.StoreAsync();
-        writer.DetachStream();
-        stream.Seek(0);
-
-        // Back to the UI thread to touch XAML.
-        co_await wil::resume_foreground(dispatcher);
-
         try
         {
             winrt::Windows::UI::Xaml::Media::Imaging::BitmapImage bmp;
             co_await bmp.SetSourceAsync(stream);
+            if (generation != _previewGeneration)
+            {
+                co_return;
+            }
             _image.Source(bmp);
             _image.Visibility(winrt::Windows::UI::Xaml::Visibility::Visible);
             _preview.Visibility(winrt::Windows::UI::Xaml::Visibility::Collapsed);
@@ -515,6 +583,10 @@ namespace winrt::TerminalApp::implementation
 
     INewContentArgs FileBrowserContent::GetNewTerminalArgs(const BuildStartupKind /* kind */) const
     {
+        // NOTE: like the other non-terminal panes (e.g. ScratchpadContent), only
+        // the content type is round-tripped. Moving this pane to a new window or
+        // restoring it does not preserve the current directory; it reopens at the
+        // default location. Persisting the cwd would require a dedicated args type.
         return BaseContentArgs(L"fileBrowser");
     }
 

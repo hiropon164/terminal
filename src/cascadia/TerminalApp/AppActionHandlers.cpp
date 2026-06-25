@@ -7,6 +7,7 @@
 #include "TerminalPage.h"
 #include "ScratchpadContent.h"
 #include "FileBrowserContent.h"
+#include "BrowserContent.h"
 #include "../WinRTUtils/inc/WtExeUtils.h"
 #include "../../types/inc/utils.hpp"
 #include "../TerminalSettingsAppAdapterLib/TerminalSettings.h"
@@ -1613,6 +1614,16 @@ namespace winrt::TerminalApp::implementation
         // handle still dispatch actions (same pattern as the scratchpad).
         browserContent->GetRoot().KeyDown({ get_weak(), &TerminalPage::_KeyDownHandler });
 
+        const auto resultPane = std::make_shared<Pane>(*browserContent);
+        _SplitPane(_senderOrFocusedTab(sender), SplitDirection::Automatic, 0.5f, resultPane);
+        args.Handled(true);
+    }
+
+    void TerminalPage::_HandleOpenBrowserPane(const IInspectable& sender,
+                                              const ActionEventArgs& args)
+    {
+        const auto& browserContent{ winrt::make_self<BrowserContent>(_settings.GlobalSettings().BrowserHomePage(), _settings.GlobalSettings().SearchWebDefaultQueryUrl()) };
+        browserContent->GetRoot().KeyDown({ get_weak(), &TerminalPage::_KeyDownHandler });
         const auto resultPane = std::make_shared<Pane>(*browserContent);
         _SplitPane(_senderOrFocusedTab(sender), SplitDirection::Automatic, 0.5f, resultPane);
         args.Handled(true);
