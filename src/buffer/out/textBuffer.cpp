@@ -2418,6 +2418,39 @@ void TextBuffer::SerializeTo(HANDLE handle) const
     }
 }
 
+// Like SerializeTo(HANDLE), but accumulates the whole serialization into a single
+// string and returns it (no BOM, no chunked file writes). Used to capture a
+// snapshot of the screen as a replayable VT stream.
+std::wstring TextBuffer::SerializeToString() const
+{
+    std::wstring buffer;
+
+    std::optional<TextAttribute> previousTextAttr;
+    bool delayedLineBreak = false;
+
+    const til::CoordType firstRow = 0;
+    const til::CoordType lastRow = GetLastNonSpaceCharacter(nullptr).y;
+
+    for (til::CoordType currentRow = firstRow;; currentRow++)
+    {
+        const auto& row = GetRowByOffset(currentRow);
+
+        const auto isLastRow = currentRow == lastRow;
+        const auto startX = 0;
+        const auto endX = row.GetReadableColumnCount();
+        const bool addLineBreak = !row.WasWrapForced() || isLastRow;
+
+        _SerializeRow(row, startX, endX, addLineBreak, isLastRow, buffer, previousTextAttr, delayedLineBreak);
+
+        if (isLastRow)
+        {
+            break;
+        }
+    }
+
+    return buffer;
+}
+
 // Serializes one row of the text buffer including ANSI escape code control sequences.
 // Arguments:
 // - row - A reference to the row being serialized.

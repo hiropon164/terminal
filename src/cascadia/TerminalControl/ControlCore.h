@@ -155,6 +155,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         void Close();
         void PersistTo(HANDLE handle) const;
         void RestoreFromPath(const wchar_t* path) const;
+        winrt::hstring SerializeMainBuffer() const;
 
         void ClearQuickFix();
 

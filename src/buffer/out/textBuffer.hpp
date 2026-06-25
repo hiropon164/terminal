@@ -284,6 +284,7 @@ public:
                        std::function<std::tuple<COLORREF, COLORREF, COLORREF>(const TextAttribute&)> GetAttributeColors) const noexcept;
 
     void SerializeTo(HANDLE handle) const;
+    std::wstring SerializeToString() const;
 
     struct PositionInformation
     {

@@ -1544,6 +1544,11 @@ void Terminal::SerializeMainBuffer(HANDLE handle) const
     _mainBuffer->SerializeTo(handle);
 }
 
+std::wstring Terminal::SerializeMainBuffer() const
+{
+    return _mainBuffer->SerializeToString();
+}
+
 void Terminal::UnknownSequence() noexcept
 {
 }

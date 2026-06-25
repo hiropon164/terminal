@@ -109,6 +109,7 @@ namespace Microsoft.Terminal.Control
         void ClearBuffer(ClearBufferType clearType);
         void RestoreFromPath(String path);
         void PersistTo(Int64 handle);
+        ControlCore Core();
         void OpenCWD();
         void Close();
         Windows.Foundation.Size CharacterDimensions { get; };

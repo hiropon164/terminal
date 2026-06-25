@@ -75,8 +75,11 @@ namespace winrt::TerminalApp::implementation
         }
     }
 
-    PaneShareSession::PaneShareSession(ITerminalConnection connection, std::string token) :
+    PaneShareSession::PaneShareSession(ITerminalConnection connection,
+                                       winrt::Microsoft::Terminal::Control::ControlCore core,
+                                       std::string token) :
         _conn{ std::move(connection) },
+        _core{ std::move(core) },
         _token{ std::move(token) }
     {
     }
@@ -91,9 +94,35 @@ namespace winrt::TerminalApp::implementation
         opts.protocol.token = _token;
         opts.protocol.allowWrite = false; // read-only for now (M2/M4 trivially hold)
 
+        // makeSnapshot is invoked on the transport's socket thread when a viewer
+        // connects; ControlCore::SerializeMainBuffer takes the terminal read lock,
+        // so it is safe to call there. Capture the (agile) core by value.
+        auto core = _core;
         _server = std::make_shared<pane_sharing::SharingTransportServer>(
             opts,
-            []() -> pane_sharing::Bytes { return {}; }, // TODO: snapshot from the host buffer
+            [core]() -> pane_sharing::Bytes {
+                try
+                {
+                    if (!core)
+                    {
+                        return {};
+                    }
+                    const auto vt = core.SerializeMainBuffer();
+                    if (vt.empty())
+                    {
+                        return {};
+                    }
+                    const auto first = reinterpret_cast<const char16_t*>(vt.data());
+                    std::string out;
+                    char16_t pending = 0;
+                    utf16ToUtf8(winrt::array_view<const char16_t>{ first, first + vt.size() }, pending, out);
+                    return out;
+                }
+                catch (...)
+                {
+                    return {};
+                }
+            },
             [](const pane_sharing::Bytes&) {} // read-only: no remote input
         );
 

@@ -9,6 +9,7 @@
 #pragma once
 
 #include <winrt/Microsoft.Terminal.TerminalConnection.h>
+#include <winrt/Microsoft.Terminal.Control.h>
 
 #include "../SharingEngine/SharingTransportServer.h"
 
@@ -20,7 +21,9 @@ namespace winrt::TerminalApp::implementation
     class PaneShareSession : public std::enable_shared_from_this<PaneShareSession>
     {
     public:
-        PaneShareSession(winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection connection, std::string token);
+        PaneShareSession(winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection connection,
+                         winrt::Microsoft::Terminal::Control::ControlCore core,
+                         std::string token);
 
         // Starts the server and subscribes to the pane output. false on bind failure.
         winrt::Windows::Foundation::IAsyncOperation<bool> StartAsync();
@@ -34,6 +37,7 @@ namespace winrt::TerminalApp::implementation
         void _onOutput(winrt::array_view<const char16_t> data);
 
         winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection _conn{ nullptr };
+        winrt::Microsoft::Terminal::Control::ControlCore _core{ nullptr };
         std::string _token;
         std::shared_ptr<pane_sharing::SharingTransportServer> _server;
         winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection::TerminalOutput_revoker _revoker;

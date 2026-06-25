@@ -1769,7 +1769,7 @@ namespace winrt::TerminalApp::implementation
             }
         }
 
-        auto session = std::make_shared<PaneShareSession>(connection, token);
+        auto session = std::make_shared<PaneShareSession>(connection, control.Core(), token);
         const bool ok = co_await session->StartAsync();
 
         // StartAsync resumes off the UI thread (socket bind); come back to touch XAML.

@@ -195,6 +195,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         Control::CursorDisplayState CursorVisibility() const noexcept;
         void CursorVisibility(Control::CursorDisplayState cursorVisibility);
 
+        Control::ControlCore Core() { return _core; }
         void ApplyPreviewColorScheme(const Core::ICoreScheme& scheme) { _core.ApplyPreviewColorScheme(scheme); }
         void ResetPreviewColorScheme() { _core.ResetPreviewColorScheme(); }
         void SetOverrideColorScheme(const Core::ICoreScheme& scheme) { _core.SetOverrideColorScheme(scheme); }

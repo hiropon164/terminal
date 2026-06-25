@@ -129,6 +129,7 @@ public:
     std::wstring CurrentCommand() const;
 
     void SerializeMainBuffer(HANDLE handle) const;
+    std::wstring SerializeMainBuffer() const;
 
 #pragma region ITerminalApi
     // These methods are defined in TerminalApi.cpp

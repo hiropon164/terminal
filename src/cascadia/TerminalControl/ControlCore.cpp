@@ -1854,6 +1854,19 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         _terminal->SerializeMainBuffer(handle);
     }
 
+    // Returns the current screen serialized as a replayable VT stream. Takes the
+    // terminal read lock, so it is safe to call from a non-UI thread (e.g. the
+    // pane-sharing transport when a viewer connects).
+    winrt::hstring ControlCore::SerializeMainBuffer() const
+    {
+        if (_IsClosing())
+        {
+            return {};
+        }
+        const auto lock = _terminal->LockForReading();
+        return winrt::hstring{ _terminal->SerializeMainBuffer() };
+    }
+
     void ControlCore::RestoreFromPath(const wchar_t* path) const
     {
         wil::unique_handle file{ CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr) };
