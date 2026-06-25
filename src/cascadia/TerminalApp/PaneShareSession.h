@@ -28,6 +28,7 @@ namespace winrt::TerminalApp::implementation
 
         uint16_t Port() const noexcept;
         const std::string& Token() const noexcept { return _token; }
+        winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection Connection() const noexcept { return _conn; }
 
     private:
         void _onOutput(winrt::array_view<const char16_t> data);

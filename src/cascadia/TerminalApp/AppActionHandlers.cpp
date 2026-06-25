@@ -1791,6 +1791,12 @@ namespace winrt::TerminalApp::implementation
 
         _paneShares.push_back(session);
 
+        // Indicate on the tab that a pane is being shared.
+        if (const auto tab = _senderOrFocusedTab(nullptr))
+        {
+            tab->TabStatus().IsPaneSharingActive(true);
+        }
+
         const auto port = session->Port();
         const std::wstring url = L"ws://localhost:" + std::to_wstring(port) + L"/?token=" + std::wstring(token.begin(), token.end());
 
@@ -1816,6 +1822,36 @@ namespace winrt::TerminalApp::implementation
             dlg.CloseButtonText(L"OK");
             co_await presenter.ShowDialog(dlg);
         }
+    }
+
+    void TerminalPage::_HandleStopSharePane(const IInspectable& /*sender*/,
+                                            const ActionEventArgs& args)
+    {
+        bool stopped = false;
+        if (const auto control = _GetActiveControl())
+        {
+            if (const auto connection = control.Connection())
+            {
+                for (auto it = _paneShares.begin(); it != _paneShares.end(); ++it)
+                {
+                    if ((*it)->Connection() == connection)
+                    {
+                        (*it)->Stop();
+                        _paneShares.erase(it);
+                        stopped = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (stopped)
+        {
+            if (const auto tab = _senderOrFocusedTab(nullptr))
+            {
+                tab->TabStatus().IsPaneSharingActive(false);
+            }
+        }
+        args.Handled(true);
     }
 
     void TerminalPage::_HandleConnectSharedSession(const IInspectable& /*sender*/,

@@ -732,6 +732,9 @@
   <data name="SharePaneCommandKey" xml:space="preserve">
     <value>Share this pane (read-only)</value>
   </data>
+  <data name="StopSharePaneCommandKey" xml:space="preserve">
+    <value>Stop sharing this pane</value>
+  </data>
   <data name="ConnectSharedSessionCommandKey" xml:space="preserve">
     <value>Connect to a shared session</value>
   </data>

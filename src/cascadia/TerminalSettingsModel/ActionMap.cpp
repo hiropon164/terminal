@@ -117,6 +117,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
                 { ShortcutAction::OpenBrowserPane, USES_RESOURCE(L"OpenBrowserPaneCommandKey") },
                 { ShortcutAction::OpenWingetPane, USES_RESOURCE(L"OpenWingetPaneCommandKey") },
                 { ShortcutAction::SharePane, USES_RESOURCE(L"SharePaneCommandKey") },
+                { ShortcutAction::StopSharePane, USES_RESOURCE(L"StopSharePaneCommandKey") },
                 { ShortcutAction::ConnectSharedSession, USES_RESOURCE(L"ConnectSharedSessionCommandKey") },
                 { ShortcutAction::OpenSettings, USES_RESOURCE(L"OpenSettingsUICommandKey") },
                 { ShortcutAction::OpenSystemMenu, USES_RESOURCE(L"OpenSystemMenuCommandKey") },
