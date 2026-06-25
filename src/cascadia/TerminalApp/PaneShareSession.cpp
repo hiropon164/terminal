@@ -93,6 +93,8 @@ namespace winrt::TerminalApp::implementation
         opts.port = 0; // ephemeral
         opts.protocol.token = _token;
         opts.protocol.allowWrite = false; // read-only for now (M2/M4 trivially hold)
+        opts.protocol.tokenLifetimeMs = 30 * 60 * 1000; // M5: token admits new viewers for 30 min
+        opts.protocol.idleTimeoutMs = 10 * 60 * 1000; // M5: auto-stop after 10 min with no viewers
 
         // makeSnapshot is invoked on the transport's socket thread when a viewer
         // connects; ControlCore::SerializeMainBuffer takes the terminal read lock,
@@ -125,6 +127,17 @@ namespace winrt::TerminalApp::implementation
             },
             [](const pane_sharing::Bytes&) {} // read-only: no remote input
         );
+
+        // M5: when the server auto-stops (idle/lifetime), notify the owner.
+        {
+            auto weak = weak_from_this();
+            _server->onStopped = [weak]() {
+                if (auto s = weak.lock(); s && s->OnAutoStopped)
+                {
+                    s->OnAutoStopped();
+                }
+            };
+        }
 
         const bool ok = co_await _server->StartAsync();
         if (!ok)

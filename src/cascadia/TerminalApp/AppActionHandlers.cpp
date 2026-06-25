@@ -14,6 +14,7 @@
 #include "../WinRTUtils/inc/WtExeUtils.h"
 #include <random>
 #include <cwctype>
+#include <algorithm>
 #include <winrt/Windows.ApplicationModel.DataTransfer.h>
 #include "../../types/inc/utils.hpp"
 #include "../TerminalSettingsAppAdapterLib/TerminalSettings.h"
@@ -1795,6 +1796,42 @@ namespace winrt::TerminalApp::implementation
         if (const auto tab = _senderOrFocusedTab(nullptr))
         {
             tab->TabStatus().IsPaneSharingActive(true);
+        }
+
+        // M5: if the share auto-stops (idle / token lifetime), drop the session and
+        // clear the indicator. The callback fires on a background thread.
+        {
+            auto weakThis = get_weak();
+            std::weak_ptr<PaneShareSession> weakSession = session;
+            session->OnAutoStopped = [weakThis, weakSession]() {
+                const auto page = weakThis.get();
+                if (!page)
+                {
+                    return;
+                }
+                page->Dispatcher().RunAsync(winrt::Windows::UI::Core::CoreDispatcherPriority::Normal, [weakThis, weakSession]() {
+                    const auto p = weakThis.get();
+                    if (!p)
+                    {
+                        return;
+                    }
+                    if (const auto s = weakSession.lock())
+                    {
+                        auto& v = p->_paneShares;
+                        v.erase(std::remove(v.begin(), v.end(), s), v.end());
+                    }
+                    if (p->_paneShares.empty())
+                    {
+                        for (const auto& tab : p->_tabs)
+                        {
+                            if (const auto tabImpl = _GetTabImpl(tab))
+                            {
+                                tabImpl->TabStatus().IsPaneSharingActive(false);
+                            }
+                        }
+                    }
+                });
+            };
         }
 
         const auto port = session->Port();

@@ -220,6 +220,65 @@ static void test_client_side()
     CHECK(gotState == "closed");
 }
 
+static void test_m5_token_expiry()
+{
+    FakeServerTransport t;
+    uint64_t clock = 1000;
+    SharingServer s({ "secret", true, 8, 1 << 20, /*tokenLifetimeMs*/ 5000, /*idleTimeoutMs*/ 0 }, t.callbacks());
+    s.setClock([&]() { return clock; });
+
+    // Within the token lifetime: a viewer authenticates normally.
+    s.onClientConnected(1);
+    s.onClientFrame(1, hello("secret", true));
+    CHECK(s.authedCount() == 1);
+    CHECK(t.lastOp(1) == static_cast<int>(Opcode::Snapshot));
+
+    // Past the lifetime: a NEW viewer with the right token is rejected (expired).
+    clock += 6000;
+    s.onClientConnected(2);
+    s.onClientFrame(2, hello("secret", true));
+    CHECK(t.closed.count(2) == 1);
+    CHECK(t.lastOp(2) == static_cast<int>(Opcode::State));
+    // The viewer that joined earlier keeps its session and still gets output.
+    CHECK(s.authedCount() == 1);
+    s.pushOutput("still-here");
+    CHECK(t.lastOp(1) == static_cast<int>(Opcode::Output));
+}
+
+static void test_m5_idle_autostop()
+{
+    FakeServerTransport t;
+    uint64_t clock = 0;
+    bool stopped = false;
+    auto cb = t.callbacks();
+    cb.onShouldStop = [&]() { stopped = true; };
+    SharingServer s({ "secret", true, 8, 1 << 20, /*tokenLifetimeMs*/ 0, /*idleTimeoutMs*/ 10000 }, std::move(cb));
+    s.setClock([&]() { return clock; });
+
+    // No viewers yet, but still within the idle window -> no stop.
+    clock = 5000;
+    s.tick();
+    CHECK(!stopped);
+
+    // A viewer connecting resets idle; a tick while present keeps it alive.
+    s.onClientConnected(1);
+    s.onClientFrame(1, hello("secret", true));
+    clock = 20000;
+    s.tick();
+    CHECK(!stopped);
+
+    // Viewer leaves; before the idle window elapses -> still no stop.
+    s.onClientDisconnected(1);
+    clock = 25000;
+    s.tick();
+    CHECK(!stopped);
+
+    // Idle past the window with no viewers -> the share auto-stops.
+    clock = 31000;
+    s.tick();
+    CHECK(stopped);
+}
+
 static void test_end_to_end()
 {
     // Wire a write-capable client straight into the server.
@@ -272,6 +331,8 @@ int main()
     test_m4_server_disallows_write();
     test_m6_max_clients();
     test_m6_bad_frame_dropped();
+    test_m5_token_expiry();
+    test_m5_idle_autostop();
     test_client_side();
     test_end_to_end();
 

@@ -11,6 +11,38 @@ namespace pane_sharing
     {
     }
 
+    void SharingServer::setClock(std::function<uint64_t()> now)
+    {
+        _now = std::move(now);
+        _startMs = _now ? _now() : 0;
+        _idleSinceMs = _startMs;
+    }
+
+    void SharingServer::tick()
+    {
+        if (!_now)
+        {
+            return;
+        }
+        const uint64_t now = _now();
+
+        // While anyone is watching, we're not idle.
+        if (authedCount() > 0)
+        {
+            _idleSinceMs = now;
+            return;
+        }
+
+        // M5: no authenticated viewers for too long -> end the share.
+        if (_cfg.idleTimeoutMs != 0 && (now - _idleSinceMs) >= _cfg.idleTimeoutMs)
+        {
+            if (_cb.onShouldStop)
+            {
+                _cb.onShouldStop();
+            }
+        }
+    }
+
     size_t SharingServer::authedCount() const
     {
         size_t n = 0;
@@ -97,6 +129,13 @@ namespace pane_sharing
             if (_cfg.token.empty() || hello->token != _cfg.token)
             {
                 _reject(id, "unauthorized");
+                return;
+            }
+            // M5: the token only admits NEW viewers within its lifetime. (Viewers
+            // already authenticated keep their session.)
+            if (_cfg.tokenLifetimeMs != 0 && _now && (_now() - _startMs) > _cfg.tokenLifetimeMs)
+            {
+                _reject(id, "expired");
                 return;
             }
 

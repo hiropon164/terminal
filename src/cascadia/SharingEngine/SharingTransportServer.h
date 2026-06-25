@@ -26,6 +26,7 @@
 #include <winrt/Windows.Networking.h>
 #include <winrt/Windows.Networking.Sockets.h>
 #include <winrt/Windows.Storage.Streams.h>
+#include <winrt/Windows.System.Threading.h>
 
 namespace pane_sharing
 {
@@ -59,6 +60,10 @@ namespace pane_sharing
         void PushResize(uint32_t rows, uint32_t cols);
         void PushState(const std::string& state);
 
+        // M5: invoked once when the server auto-stops itself (idle/lifetime). Set
+        // by the owner to clean up (e.g. drop the session, clear the indicator).
+        std::function<void()> onStopped;
+
     private:
         struct ClientConn
         {
@@ -73,6 +78,7 @@ namespace pane_sharing
         void _SendToClient(ClientId id, const Bytes& frame);
         void _EnqueueWs(std::shared_ptr<ClientConn> conn, std::string wsBytes);
         winrt::fire_and_forget _DrainWrites(std::shared_ptr<ClientConn> conn);
+        void _OnTick();
 
         TransportServerOptions _opts;
         std::function<Bytes()> _makeSnapshot;
@@ -83,9 +89,11 @@ namespace pane_sharing
         std::map<ClientId, std::shared_ptr<ClientConn>> _conns;
         std::atomic<ClientId> _nextId{ 1 };
         std::atomic<bool> _stopped{ false };
+        bool _shouldStop = false; // set by the server's onShouldStop, under _mutex
         uint16_t _boundPort = 0;
 
         winrt::Windows::Networking::Sockets::StreamSocketListener _listener{ nullptr };
         winrt::event_token _connectedToken{};
+        winrt::Windows::System::Threading::ThreadPoolTimer _tickTimer{ nullptr };
     };
 }

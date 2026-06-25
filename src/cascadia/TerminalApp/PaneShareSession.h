@@ -13,6 +13,7 @@
 
 #include "../SharingEngine/SharingTransportServer.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -32,6 +33,11 @@ namespace winrt::TerminalApp::implementation
         uint16_t Port() const noexcept;
         const std::string& Token() const noexcept { return _token; }
         winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection Connection() const noexcept { return _conn; }
+
+        // M5: invoked (on a background thread) when the share auto-stops itself
+        // because it was idle or the token lifetime elapsed. The owner marshals to
+        // the UI thread to drop the session and clear the indicator.
+        std::function<void()> OnAutoStopped;
 
     private:
         void _onOutput(winrt::array_view<const char16_t> data);

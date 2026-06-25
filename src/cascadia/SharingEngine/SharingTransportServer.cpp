@@ -5,6 +5,7 @@
 
 #include "WebSocket.h"
 
+#include <chrono>
 #include <vector>
 
 using namespace winrt;
@@ -49,7 +50,16 @@ namespace pane_sharing
                 _conns.erase(it);
             }
         };
+        // M5: tick() (under _mutex) may decide the share should end; defer the
+        // actual teardown to _OnTick so we never call Stop() re-entrantly here.
+        cb.onShouldStop = [this]() { _shouldStop = true; };
         _server = std::make_unique<SharingServer>(_opts.protocol, std::move(cb));
+        // Monotonic clock for token expiry / idle auto-stop (M5).
+        _server->setClock([]() -> uint64_t {
+            return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             std::chrono::steady_clock::now().time_since_epoch())
+                                             .count());
+        });
     }
 
     SharingTransportServer::~SharingTransportServer()
@@ -83,7 +93,44 @@ namespace pane_sharing
         {
             _boundPort = _opts.port;
         }
+
+        // M5: drive the server's idle/lifetime checks on a periodic timer.
+        if (_opts.protocol.idleTimeoutMs != 0 || _opts.protocol.tokenLifetimeMs != 0)
+        {
+            using namespace std::chrono_literals;
+            std::weak_ptr<SharingTransportServer> weak = self;
+            _tickTimer = winrt::Windows::System::Threading::ThreadPoolTimer::CreatePeriodicTimer(
+                [weak](winrt::Windows::System::Threading::ThreadPoolTimer const&) {
+                    if (auto strong = weak.lock())
+                    {
+                        strong->_OnTick();
+                    }
+                },
+                15s);
+        }
         co_return true;
+    }
+
+    void SharingTransportServer::_OnTick()
+    {
+        bool stop = false;
+        {
+            std::lock_guard guard{ _mutex };
+            if (_server)
+            {
+                _server->tick();
+            }
+            stop = _shouldStop;
+        }
+        if (stop)
+        {
+            auto cb = onStopped;
+            Stop();
+            if (cb)
+            {
+                cb();
+            }
+        }
     }
 
     void SharingTransportServer::Stop()
@@ -91,6 +138,17 @@ namespace pane_sharing
         if (_stopped.exchange(true))
         {
             return;
+        }
+        try
+        {
+            if (_tickTimer)
+            {
+                _tickTimer.Cancel();
+                _tickTimer = nullptr;
+            }
+        }
+        catch (...)
+        {
         }
         try
         {
