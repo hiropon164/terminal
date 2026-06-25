@@ -21,6 +21,7 @@
 #include "ScratchpadContent.h"
 #include "FileBrowserContent.h"
 #include "BrowserContent.h"
+#include "WingetContent.h"
 #include "SettingsPaneContent.h"
 #include "SnippetsPaneContent.h"
 #include "TabRowControl.h"
@@ -3917,6 +3918,12 @@ namespace winrt::TerminalApp::implementation
             const auto& browser{ winrt::make_self<BrowserContent>(_settings.GlobalSettings().BrowserHomePage(), _settings.GlobalSettings().SearchWebDefaultQueryUrl()) };
             browser->GetRoot().KeyDown({ get_weak(), &TerminalPage::_KeyDownHandler });
             content = *browser;
+        }
+        else if (paneType == L"winget")
+        {
+            const auto& winget{ winrt::make_self<WingetContent>() };
+            winget->GetRoot().KeyDown({ get_weak(), &TerminalPage::_KeyDownHandler });
+            content = *winget;
         }
         else if (paneType == L"settings")
         {

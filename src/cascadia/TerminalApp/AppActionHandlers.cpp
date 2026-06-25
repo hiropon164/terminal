@@ -8,6 +8,7 @@
 #include "ScratchpadContent.h"
 #include "FileBrowserContent.h"
 #include "BrowserContent.h"
+#include "WingetContent.h"
 #include "../WinRTUtils/inc/WtExeUtils.h"
 #include "../../types/inc/utils.hpp"
 #include "../TerminalSettingsAppAdapterLib/TerminalSettings.h"
@@ -1629,6 +1630,68 @@ namespace winrt::TerminalApp::implementation
         args.Handled(true);
     }
 
+    void TerminalPage::_HandleOpenWingetPane(const IInspectable& sender,
+                                             const ActionEventArgs& args)
+    {
+        // Identify a winget pane by its content type string. NOTE: try_as<impl>()
+        // is NOT a reliable type check for these code-only IPaneContent types - it
+        // resolves to a QI for the shared IPaneContent interface and so matches any
+        // pane content (e.g. a terminal), which would make us never create the pane.
+        const auto isWingetPane = [](const std::shared_ptr<Pane>& p) -> bool {
+            const auto content = p->GetContent();
+            if (!content)
+            {
+                return false;
+            }
+            try
+            {
+                const auto cargs = content.GetNewTerminalArgs(winrt::TerminalApp::BuildStartupKind::None);
+                return cargs && cargs.Type() == L"winget";
+            }
+            catch (...)
+            {
+                return false;
+            }
+        };
+
+        // Singleton: at most one winget pane. If one already exists in any tab,
+        // focus it instead of opening another.
+        for (uint32_t i = 0; i < _tabs.Size(); ++i)
+        {
+            if (const auto tabImpl{ _GetTabImpl(_tabs.GetAt(i)) })
+            {
+                std::shared_ptr<Pane> existing{ nullptr };
+                if (const auto rootPane{ tabImpl->GetRootPane() })
+                {
+                    rootPane->WalkTree([&existing, &isWingetPane](const auto& p) -> bool {
+                        if (isWingetPane(p))
+                        {
+                            existing = p;
+                            return true;
+                        }
+                        return false;
+                    });
+                }
+                if (existing)
+                {
+                    _SelectTab(i);
+                    if (const auto content = existing->GetContent())
+                    {
+                        content.Focus(winrt::Windows::UI::Xaml::FocusState::Programmatic);
+                    }
+                    args.Handled(true);
+                    return;
+                }
+            }
+        }
+
+        const auto& wingetContent{ winrt::make_self<WingetContent>() };
+        wingetContent->GetRoot().KeyDown({ get_weak(), &TerminalPage::_KeyDownHandler });
+        const auto resultPane = std::make_shared<Pane>(*wingetContent);
+        _SplitPane(_senderOrFocusedTab(sender), SplitDirection::Automatic, 0.5f, resultPane);
+        args.Handled(true);
+    }
+
     void TerminalPage::_HandleSelectFileBrowserDrive(const IInspectable& /*sender*/,
                                                      const ActionEventArgs& args)
     {
@@ -1638,10 +1701,28 @@ namespace winrt::TerminalApp::implementation
             if (const auto rootPane{ focusedTab->GetRootPane() })
             {
                 rootPane->WalkTree([](const auto& p) -> bool {
-                    if (const auto& filer{ p->GetContent().try_as<FileBrowserContent>() })
+                    // Match by content type string first - try_as<impl>() alone is
+                    // unreliable for code-only IPaneContent types (it matches any
+                    // pane content). Only then is the downcast safe.
+                    const auto content = p->GetContent();
+                    if (!content)
                     {
-                        filer->ShowDrives();
-                        return true;
+                        return false;
+                    }
+                    try
+                    {
+                        const auto cargs = content.GetNewTerminalArgs(winrt::TerminalApp::BuildStartupKind::None);
+                        if (cargs && cargs.Type() == L"fileBrowser")
+                        {
+                            if (const auto& filer{ content.try_as<FileBrowserContent>() })
+                            {
+                                filer->ShowDrives();
+                                return true;
+                            }
+                        }
+                    }
+                    catch (...)
+                    {
                     }
                     return false;
                 });

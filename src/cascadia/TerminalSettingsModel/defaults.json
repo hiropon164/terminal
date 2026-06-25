@@ -614,6 +614,7 @@
         { "command": "openFileBrowser", "id": "Terminal.OpenFileBrowser" },
         { "command": "selectFileBrowserDrive", "id": "Terminal.SelectFileBrowserDrive" },
         { "command": "openBrowserPane", "id": "Terminal.OpenBrowserPane" },
+        { "command": "openWingetPane", "id": "Terminal.OpenWingetPane" },
         { "command": "toggleSplitOrientation", "id": "Terminal.ToggleSplitOrientation" },
         { "command": "toggleReadOnlyMode", "id": "Terminal.ToggleReadOnlyMode" },
         { "command": "enableReadOnlyMode", "id": "Terminal.EnableReadOnlyMode" },

@@ -169,6 +169,7 @@
     </ClInclude>
     <ClInclude Include="FileBrowserContent.h" />
     <ClInclude Include="BrowserContent.h" />
+    <ClInclude Include="WingetContent.h" />
     <ClInclude Include="SnippetsPaneContent.h">
       <DependentUpon>SnippetsPaneContent.xaml</DependentUpon>
     </ClInclude>
@@ -284,6 +285,7 @@
     </ClCompile>
     <ClCompile Include="FileBrowserContent.cpp" />
     <ClCompile Include="BrowserContent.cpp" />
+    <ClCompile Include="WingetContent.cpp" />
     <ClCompile Include="SnippetsPaneContent.cpp">
       <DependentUpon>SnippetsPaneContent.xaml</DependentUpon>
     </ClCompile>

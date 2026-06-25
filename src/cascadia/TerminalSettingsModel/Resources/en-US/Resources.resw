@@ -726,6 +726,9 @@
   <data name="OpenBrowserPaneCommandKey" xml:space="preserve">
     <value>Open browser pane</value>
   </data>
+  <data name="OpenWingetPaneCommandKey" xml:space="preserve">
+    <value>Open winget pane</value>
+  </data>
   <data name="SelectOutputNextCommandKey" xml:space="preserve">
     <value>Select next command output</value>
   </data>
