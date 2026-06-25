@@ -1471,23 +1471,13 @@ namespace winrt::TerminalApp::implementation
             }
         });
 
-        // Pick up Alt+drag move requests from this (leaf) pane.
-        auto moveToken = pane->MovePaneRequested([weakThis](std::shared_ptr<Pane> src, winrt::Windows::Foundation::Point windowPoint) {
+        // Pick up the start of an Alt+drag move from this (leaf) pane. The Tab
+        // then captures the pointer on a top-level overlay and drives the rest of
+        // the drag, so pane content can't intercept it.
+        auto moveStartToken = pane->MovePaneDragStarted([weakThis](std::shared_ptr<Pane> src, winrt::Windows::UI::Xaml::Input::Pointer pointer) {
             if (auto tab{ weakThis.get() })
             {
-                tab->_OnMovePaneRequested(src, windowPoint);
-            }
-        });
-        auto moveDragToken = pane->MovePaneDragMoved([weakThis](std::shared_ptr<Pane> src, winrt::Windows::Foundation::Point windowPoint) {
-            if (auto tab{ weakThis.get() })
-            {
-                tab->_OnMovePaneDragMoved(src, windowPoint);
-            }
-        });
-        auto moveCancelToken = pane->MovePaneDragCanceled([weakThis]() {
-            if (auto tab{ weakThis.get() })
-            {
-                tab->_RemoveMoveGhost();
+                tab->_OnMovePaneDragStarted(src, pointer);
             }
         });
 
@@ -1496,7 +1486,7 @@ namespace winrt::TerminalApp::implementation
         auto detachedToken = std::make_shared<winrt::event_token>();
         // Add a Detached event handler to the Pane to clean up tab state
         // and other event handlers when a pane is removed from this tab.
-        *detachedToken = pane->Detached([weakThis, weakPane, gotFocusToken, lostFocusToken, closedToken, moveToken, moveDragToken, moveCancelToken, detachedToken](std::shared_ptr<Pane> /*sender*/) {
+        *detachedToken = pane->Detached([weakThis, weakPane, gotFocusToken, lostFocusToken, closedToken, moveStartToken, detachedToken](std::shared_ptr<Pane> /*sender*/) {
             // Make sure we do this at most once
             if (auto pane{ weakPane.lock() })
             {
@@ -1504,9 +1494,7 @@ namespace winrt::TerminalApp::implementation
                 pane->GotFocus(gotFocusToken);
                 pane->LostFocus(lostFocusToken);
                 pane->Closed(closedToken);
-                pane->MovePaneRequested(moveToken);
-                pane->MovePaneDragMoved(moveDragToken);
-                pane->MovePaneDragCanceled(moveCancelToken);
+                pane->MovePaneDragStarted(moveStartToken);
 
                 if (auto tab{ weakThis.get() })
                 {
@@ -1523,6 +1511,103 @@ namespace winrt::TerminalApp::implementation
                 }
             }
         });
+    }
+
+    // Method Description:
+    // - Begins an Alt+drag-to-move. Puts up a transparent, top-level overlay that
+    //   captures the pointer for the whole gesture, so pane content (a WebView2
+    //   browser, a ListView, etc.) can't steal the drag. The overlay drives the
+    //   ghost follow and the drop.
+    void Tab::_OnMovePaneDragStarted(std::shared_ptr<Pane> src, winrt::Windows::UI::Xaml::Input::Pointer pointer)
+    {
+        ASSERT_UI_THREAD();
+
+        if (!src || !_rootPane)
+        {
+            return;
+        }
+        _moveDragSrc = src;
+
+        const auto rootElement = _rootPane->GetRootElement();
+
+        if (_moveOverlay == nullptr)
+        {
+            _moveOverlay = winrt::Windows::UI::Xaml::Controls::Border{};
+            // A non-null (but fully transparent) brush keeps the overlay
+            // hit-test-visible so it owns the pointer over any content beneath it.
+            _moveOverlay.Background(winrt::Windows::UI::Xaml::Media::SolidColorBrush{ winrt::Windows::UI::ColorHelper::FromArgb(0x00, 0x00, 0x00, 0x00) });
+            winrt::Windows::UI::Xaml::Controls::Grid::SetColumnSpan(_moveOverlay, 99);
+            winrt::Windows::UI::Xaml::Controls::Grid::SetRowSpan(_moveOverlay, 99);
+
+            auto weakThis{ get_weak() };
+            _moveOverlay.PointerMoved([weakThis](auto&&, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) {
+                if (auto tab{ weakThis.get() })
+                {
+                    if (auto s{ tab->_moveDragSrc.lock() })
+                    {
+                        tab->_OnMovePaneDragMoved(s, e.GetCurrentPoint(nullptr).Position());
+                    }
+                }
+            });
+            _moveOverlay.PointerReleased([weakThis](auto&&, winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const& e) {
+                if (auto tab{ weakThis.get() })
+                {
+                    auto s{ tab->_moveDragSrc.lock() };
+                    const auto pt = e.GetCurrentPoint(nullptr).Position();
+                    tab->_EndOverlayDrag();
+                    if (s)
+                    {
+                        tab->_OnMovePaneRequested(s, pt);
+                    }
+                }
+            });
+            _moveOverlay.PointerCaptureLost([weakThis](auto&&, auto&&) {
+                if (auto tab{ weakThis.get() })
+                {
+                    tab->_EndOverlayDrag();
+                }
+            });
+        }
+
+        // (Re-)parent the overlay onto the current root element and put it on top.
+        if (const auto parentPanel = _moveOverlay.Parent().try_as<winrt::Windows::UI::Xaml::Controls::Panel>())
+        {
+            uint32_t idx{};
+            if (parentPanel.Children().IndexOf(_moveOverlay, idx))
+            {
+                parentPanel.Children().RemoveAt(idx);
+            }
+        }
+        rootElement.Children().Append(_moveOverlay);
+        _moveOverlay.Visibility(winrt::Windows::UI::Xaml::Visibility::Visible);
+        _moveOverlay.CapturePointer(pointer);
+    }
+
+    // Method Description:
+    // - Tears down the capture overlay and the ghost, and clears the dragged
+    //   pane's tint. Used both on a successful drop and on a cancelled drag.
+    void Tab::_EndOverlayDrag()
+    {
+        ASSERT_UI_THREAD();
+
+        if (_moveOverlay != nullptr)
+        {
+            if (const auto parentPanel = _moveOverlay.Parent().try_as<winrt::Windows::UI::Xaml::Controls::Panel>())
+            {
+                uint32_t idx{};
+                if (parentPanel.Children().IndexOf(_moveOverlay, idx))
+                {
+                    parentPanel.Children().RemoveAt(idx);
+                }
+            }
+            _moveOverlay.Visibility(winrt::Windows::UI::Xaml::Visibility::Collapsed);
+        }
+        _RemoveMoveGhost();
+        if (auto s{ _moveDragSrc.lock() })
+        {
+            s->ClearMoveDragVisual();
+        }
+        _moveDragSrc.reset();
     }
 
     // Method Description:
@@ -1668,7 +1753,14 @@ namespace winrt::TerminalApp::implementation
                     dispatcher.TryEnqueue([weakThis, src, id, dir]() {
                         if (auto tab{ weakThis.get() })
                         {
-                            tab->_MovePaneToTarget(src, id, dir);
+                            try
+                            {
+                                tab->_MovePaneToTarget(src, id, dir);
+                            }
+                            catch (...)
+                            {
+                                LOG_CAUGHT_EXCEPTION();
+                            }
                         }
                     });
                 }

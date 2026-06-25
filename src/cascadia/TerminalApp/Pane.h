@@ -143,6 +143,10 @@ public:
     std::shared_ptr<Pane> LeafAndDirectionAt(winrt::Windows::Foundation::Point pos,
                                              winrt::Microsoft::Terminal::Settings::Model::SplitDirection& dir);
 
+    // Clears the Alt+drag-to-move tint/state. Called by the owning Tab when the
+    // drag (driven by its capture overlay) ends or is cancelled.
+    void ClearMoveDragVisual();
+
     int GetLeafPaneCount() const noexcept;
 
     void Maximize(std::shared_ptr<Pane> zoomedPane);
@@ -235,6 +239,10 @@ public:
     // Raised while the user is Alt+dragging this (leaf) pane (the Point is the
     // current cursor position in window coordinates). The Tab uses it to make a
     // ghost follow the cursor.
+    // Raised when an Alt+drag of this (leaf) pane begins. The Tab takes over from
+    // here using a top-level capture overlay (so content like WebView2 / ListView
+    // can't intercept the drag). The Pointer is the one to capture on the overlay.
+    til::event<winrt::delegate<std::shared_ptr<Pane>, winrt::Windows::UI::Xaml::Input::Pointer>> MovePaneDragStarted;
     til::event<winrt::delegate<std::shared_ptr<Pane>, winrt::Windows::Foundation::Point>> MovePaneDragMoved;
     // Raised when an Alt+drag is aborted without a drop (e.g. the pointer capture
     // was lost), so the Tab can tear down the drag ghost.
@@ -262,12 +270,10 @@ private:
     bool _movePaneDragging{ false };
     // A translucent tint shown over this leaf's content while it is being dragged.
     winrt::Windows::UI::Xaml::Controls::Border _dragHighlight{ nullptr };
-    // The handlers registered on _borderFirst for the Alt+drag-to-move gesture.
-    // Kept so they can be removed in the destructor (they capture a raw `this`).
+    // The PointerPressed handler registered on _borderFirst that begins the
+    // Alt+drag-to-move gesture. Kept so it can be removed in the destructor (it
+    // captures a raw `this`).
     winrt::Windows::Foundation::IInspectable _movePressedHandler{ nullptr };
-    winrt::Windows::Foundation::IInspectable _moveMovedHandler{ nullptr };
-    winrt::Windows::Foundation::IInspectable _moveReleasedHandler{ nullptr };
-    winrt::Windows::Foundation::IInspectable _moveCaptureLostHandler{ nullptr };
 
     PaneResources _themeResources;
 
@@ -358,9 +364,6 @@ private:
 
     void _SetupMovePaneDrag();
     void _MovePanePointerPressed(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
-    void _MovePanePointerMoved(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
-    void _MovePanePointerReleased(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
-    void _MovePanePointerCaptureLost(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e);
 
     // Function Description:
     // - Returns true if the given direction can be used with the given split

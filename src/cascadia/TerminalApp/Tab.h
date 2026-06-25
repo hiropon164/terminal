@@ -174,6 +174,14 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Media::TranslateTransform _moveGhostTransform{ nullptr };
         bool _moveGhostActive{ false };
 
+        // A transparent, top-level overlay that owns the pointer capture for the
+        // duration of an Alt+drag-to-move. Capturing here (instead of on the
+        // dragged pane's border) keeps content such as a WebView2 browser or a
+        // ListView from intercepting the gesture. _moveDragSrc is the pane being
+        // dragged.
+        winrt::Windows::UI::Xaml::Controls::Border _moveOverlay{ nullptr };
+        std::weak_ptr<Pane> _moveDragSrc;
+
         winrt::Microsoft::Terminal::Settings::Model::IconStyle _lastIconStyle;
         winrt::hstring _lastIconPath{};
         std::optional<winrt::Windows::UI::Color> _runtimeTabColor{};
@@ -232,10 +240,12 @@ namespace winrt::TerminalApp::implementation
         void _AttachEventHandlersToContent(const uint32_t paneId, const winrt::TerminalApp::IPaneContent& content);
         void _AttachEventHandlersToPane(std::shared_ptr<Pane> pane);
 
+        void _OnMovePaneDragStarted(std::shared_ptr<Pane> src, winrt::Windows::UI::Xaml::Input::Pointer pointer);
         void _OnMovePaneDragMoved(std::shared_ptr<Pane> src, winrt::Windows::Foundation::Point windowPoint);
         void _OnMovePaneRequested(std::shared_ptr<Pane> src, winrt::Windows::Foundation::Point windowPoint);
         void _MovePaneToTarget(std::shared_ptr<Pane> src, uint32_t targetId, winrt::Microsoft::Terminal::Settings::Model::SplitDirection dir);
         void _RemoveMoveGhost();
+        void _EndOverlayDrag();
 
         void _UpdateActivePane(std::shared_ptr<Pane> pane);
         void _UpdateMenuItemStates();

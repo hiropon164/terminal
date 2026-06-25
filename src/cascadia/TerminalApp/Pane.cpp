@@ -104,18 +104,6 @@ Pane::~Pane()
     {
         _borderFirst.RemoveHandler(UIElement::PointerPressedEvent(), _movePressedHandler);
     }
-    if (_moveMovedHandler)
-    {
-        _borderFirst.RemoveHandler(UIElement::PointerMovedEvent(), _moveMovedHandler);
-    }
-    if (_moveReleasedHandler)
-    {
-        _borderFirst.RemoveHandler(UIElement::PointerReleasedEvent(), _moveReleasedHandler);
-    }
-    if (_moveCaptureLostHandler)
-    {
-        _borderFirst.RemoveHandler(UIElement::PointerCaptureLostEvent(), _moveCaptureLostHandler);
-    }
 }
 
 // Extract the terminal settings from the current (leaf) pane's control
@@ -3304,14 +3292,11 @@ void Pane::_SetupMovePaneDrag()
     {
         return;
     }
+    // We only need to detect the *start* of an Alt+drag here. Once it begins, the
+    // owning Tab takes over with a top-level capture overlay (so content such as a
+    // WebView2 browser or a ListView can't intercept the drag mid-gesture).
     _movePressedHandler = winrt::box_value(winrt::Windows::UI::Xaml::Input::PointerEventHandler{ this, &Pane::_MovePanePointerPressed });
-    _moveMovedHandler = winrt::box_value(winrt::Windows::UI::Xaml::Input::PointerEventHandler{ this, &Pane::_MovePanePointerMoved });
-    _moveReleasedHandler = winrt::box_value(winrt::Windows::UI::Xaml::Input::PointerEventHandler{ this, &Pane::_MovePanePointerReleased });
-    _moveCaptureLostHandler = winrt::box_value(winrt::Windows::UI::Xaml::Input::PointerEventHandler{ this, &Pane::_MovePanePointerCaptureLost });
     _borderFirst.AddHandler(UIElement::PointerPressedEvent(), _movePressedHandler, true);
-    _borderFirst.AddHandler(UIElement::PointerMovedEvent(), _moveMovedHandler, true);
-    _borderFirst.AddHandler(UIElement::PointerReleasedEvent(), _moveReleasedHandler, true);
-    _borderFirst.AddHandler(UIElement::PointerCaptureLostEvent(), _moveCaptureLostHandler, true);
 }
 
 void Pane::_MovePanePointerPressed(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e)
@@ -3330,7 +3315,6 @@ void Pane::_MovePanePointerPressed(const winrt::Windows::Foundation::IInspectabl
     }
 
     _movePaneDragging = true;
-    _borderFirst.CapturePointer(e.Pointer());
 
     // Tint the pane so it's obvious which one is being carried.
     if (_dragHighlight == nullptr)
@@ -3346,57 +3330,20 @@ void Pane::_MovePanePointerPressed(const winrt::Windows::Foundation::IInspectabl
     }
     _dragHighlight.Visibility(Visibility::Visible);
 
+    // Hand off to the Tab, which captures the pointer on a top-level overlay and
+    // drives the rest of the drag from there.
+    MovePaneDragStarted.raise(shared_from_this(), e.Pointer());
+
     e.Handled(true);
 }
 
-void Pane::_MovePanePointerMoved(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e)
+void Pane::ClearMoveDragVisual()
 {
-    if (!_movePaneDragging)
-    {
-        return;
-    }
-    // Let the Tab move the drag ghost to follow the cursor.
-    MovePaneDragMoved.raise(shared_from_this(), e.GetCurrentPoint(nullptr).Position());
-    e.Handled(true);
-}
-
-void Pane::_MovePanePointerReleased(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& e)
-{
-    if (!_movePaneDragging)
-    {
-        return;
-    }
-    _movePaneDragging = false;
-    _borderFirst.ReleasePointerCapture(e.Pointer());
-
-    if (_dragHighlight != nullptr)
-    {
-        _dragHighlight.Visibility(Visibility::Collapsed);
-    }
-
-    // Report the drop location in window coordinates; the owning Tab knows the
-    // whole pane tree and turns this into a target pane + insertion side.
-    const auto dropPoint = e.GetCurrentPoint(nullptr).Position();
-    MovePaneRequested.raise(shared_from_this(), dropPoint);
-    e.Handled(true);
-}
-
-void Pane::_MovePanePointerCaptureLost(const winrt::Windows::Foundation::IInspectable& /*sender*/, const winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs& /*e*/)
-{
-    // A clean release sets _movePaneDragging=false before ReleasePointerCapture,
-    // so if it's still set here the capture was lost some other way (window
-    // deactivation, capture stolen, etc.). Abort the drag and clean up so the
-    // ghost/highlight don't get stranded on screen.
-    if (!_movePaneDragging)
-    {
-        return;
-    }
     _movePaneDragging = false;
     if (_dragHighlight != nullptr)
     {
         _dragHighlight.Visibility(Visibility::Collapsed);
     }
-    MovePaneDragCanceled.raise();
 }
 
 // Method Description:
