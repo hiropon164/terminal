@@ -616,6 +616,7 @@
         { "command": "openBrowserPane", "id": "Terminal.OpenBrowserPane" },
         { "command": "openWingetPane", "id": "Terminal.OpenWingetPane" },
         { "command": "sharePane", "id": "Terminal.SharePane" },
+        { "command": "connectSharedSession", "id": "Terminal.ConnectSharedSession" },
         { "command": "toggleSplitOrientation", "id": "Terminal.ToggleSplitOrientation" },
         { "command": "toggleReadOnlyMode", "id": "Terminal.ToggleReadOnlyMode" },
         { "command": "enableReadOnlyMode", "id": "Terminal.EnableReadOnlyMode" },

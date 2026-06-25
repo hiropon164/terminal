@@ -10,8 +10,10 @@
 #include "BrowserContent.h"
 #include "WingetContent.h"
 #include "PaneShareSession.h"
+#include "RemoteConnection.h"
 #include "../WinRTUtils/inc/WtExeUtils.h"
 #include <random>
+#include <cwctype>
 #include <winrt/Windows.ApplicationModel.DataTransfer.h>
 #include "../../types/inc/utils.hpp"
 #include "../TerminalSettingsAppAdapterLib/TerminalSettings.h"
@@ -1813,6 +1815,100 @@ namespace winrt::TerminalApp::implementation
             dlg.Content(tb);
             dlg.CloseButtonText(L"OK");
             co_await presenter.ShowDialog(dlg);
+        }
+    }
+
+    void TerminalPage::_HandleConnectSharedSession(const IInspectable& /*sender*/,
+                                                   const ActionEventArgs& args)
+    {
+        _ConnectSharedSession();
+        args.Handled(true);
+    }
+
+    winrt::fire_and_forget TerminalPage::_ConnectSharedSession()
+    {
+        auto strongThis = get_strong();
+
+        const auto presenter{ _dialogPresenter.get() };
+        if (!presenter)
+        {
+            co_return;
+        }
+
+        // Prompt for the ws:// share URL (with ?token=...). Pre-fill from the
+        // clipboard if it already looks like one.
+        winrt::Windows::UI::Xaml::Controls::TextBox urlBox;
+        urlBox.PlaceholderText(L"ws://localhost:PORT/?token=...");
+        urlBox.AcceptsReturn(false);
+        try
+        {
+            const auto content = winrt::Windows::ApplicationModel::DataTransfer::Clipboard::GetContent();
+            if (content && content.Contains(winrt::Windows::ApplicationModel::DataTransfer::StandardDataFormats::Text()))
+            {
+                const auto clip = co_await content.GetTextAsync();
+                co_await wil::resume_foreground(Dispatcher());
+                std::wstring c{ clip.c_str() };
+                if (c.rfind(L"ws://", 0) == 0 || c.rfind(L"wss://", 0) == 0)
+                {
+                    urlBox.Text(clip);
+                }
+            }
+        }
+        catch (...)
+        {
+        }
+
+        winrt::Windows::UI::Xaml::Controls::ContentDialog dlg;
+        dlg.Title(winrt::box_value(winrt::hstring{ L"Connect to a shared session" }));
+        dlg.Content(urlBox);
+        dlg.PrimaryButtonText(L"Connect");
+        dlg.CloseButtonText(L"Cancel");
+        dlg.DefaultButton(winrt::Windows::UI::Xaml::Controls::ContentDialogButton::Primary);
+
+        const auto result = co_await presenter.ShowDialog(dlg);
+        if (result != winrt::Windows::UI::Xaml::Controls::ContentDialogResult::Primary)
+        {
+            co_return;
+        }
+
+        std::wstring url{ urlBox.Text().c_str() };
+        // trim
+        while (!url.empty() && iswspace(url.front()))
+        {
+            url.erase(url.begin());
+        }
+        while (!url.empty() && iswspace(url.back()))
+        {
+            url.pop_back();
+        }
+        if (url.rfind(L"ws://", 0) != 0 && url.rfind(L"wss://", 0) != 0)
+        {
+            co_return;
+        }
+
+        // Pull the token out of the query string.
+        std::wstring token;
+        if (const auto p = url.find(L"token="); p != std::wstring::npos)
+        {
+            token = url.substr(p + 6);
+            if (const auto amp = token.find(L'&'); amp != std::wstring::npos)
+            {
+                token = token.substr(0, amp);
+            }
+        }
+
+        const auto remote = winrt::make_self<RemoteConnection>(winrt::hstring{ url }, winrt::hstring{ token });
+
+        const auto tabImpl = _senderOrFocusedTab(nullptr);
+        if (!tabImpl)
+        {
+            co_return;
+        }
+        Microsoft::Terminal::Settings::Model::NewTerminalArgs newTerminalArgs{};
+        const auto pane = _MakeTerminalPane(newTerminalArgs, tabImpl.as<winrt::TerminalApp::Tab>(), *remote);
+        if (pane)
+        {
+            _SplitPane(tabImpl, SplitDirection::Automatic, 0.5f, pane);
         }
     }
 

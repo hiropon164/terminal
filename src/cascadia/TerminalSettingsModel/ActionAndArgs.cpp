@@ -106,6 +106,7 @@ static constexpr std::string_view SelectFileBrowserDriveKey{ "selectFileBrowserD
 static constexpr std::string_view OpenBrowserPaneKey{ "openBrowserPane" };
 static constexpr std::string_view OpenWingetPaneKey{ "openWingetPane" };
 static constexpr std::string_view SharePaneKey{ "sharePane" };
+static constexpr std::string_view ConnectSharedSessionKey{ "connectSharedSession" };
 static constexpr std::string_view OpenAboutKey{ "openAbout" };
 static constexpr std::string_view QuickFixKey{ "quickFix" };
 static constexpr std::string_view OpenCWDKey{ "openCWD" };

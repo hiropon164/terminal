@@ -334,6 +334,7 @@ namespace winrt::TerminalApp::implementation
         // subscriptions alive). See PaneShareSession / SharingEngine.
         std::vector<std::shared_ptr<PaneShareSession>> _paneShares;
         winrt::fire_and_forget _StartPaneShare();
+        winrt::fire_and_forget _ConnectSharedSession();
 
         std::shared_ptr<Toast> _windowIdToast{ nullptr };
         std::shared_ptr<Toast> _actionSavedToast{ nullptr };

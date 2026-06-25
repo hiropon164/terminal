@@ -117,6 +117,7 @@
     ON_ALL_ACTIONS(OpenBrowserPane)         \
     ON_ALL_ACTIONS(OpenWingetPane)          \
     ON_ALL_ACTIONS(SharePane)               \
+    ON_ALL_ACTIONS(ConnectSharedSession)    \
     ON_ALL_ACTIONS(OpenAbout)               \
     ON_ALL_ACTIONS(QuickFix)                \
     ON_ALL_ACTIONS(OpenCWD)                 \
