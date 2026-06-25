@@ -6,6 +6,8 @@
 
 ## 📌 About this fork
 
+> 🌐 **日本語版はこちら → [README.ja.md](./README.ja.md)** (Japanese)
+
 This is a **personal fork** of [microsoft/terminal](https://github.com/microsoft/terminal), maintained for private use. It is **not** affiliated with or endorsed by Microsoft, and is **not** an official build. The original project is licensed under the [MIT License](./LICENSE), which is preserved here.
 
 > Based on Windows Terminal **v1.24.2372.0**.
@@ -112,9 +114,35 @@ URL and token sees everything on that pane):
   with no viewers auto-stops after 10 minutes, so a forgotten share doesn't keep
   a shell exposed.
 
-- **Action:** `sharePane` (id `Terminal.SharePane`) — share the focused pane
+##### Connecting from another machine
+
+Two ways, depending on how much you trust the network:
+
+- **Recommended — an SSH tunnel (encrypted + authenticated).** Keep the host on
+  the default localhost share (`sharePane`). On the viewer machine, run
+  `connectSharedSessionViaSsh`: enter the **SSH target** (`user@host`) and paste
+  the host's `ws://localhost:<port>/?token=…` URL. Windows Terminal launches the
+  tunnel for you — it runs `ssh -N -L <local>:localhost:<port> user@host` in the
+  background, connects the viewer to `ws://localhost:<local>/?token=…`, and kills
+  the `ssh` process when the viewer pane closes. Nothing but SSH crosses the
+  network. Requirements: an OpenSSH **server** running on the host, and
+  **key/agent auth** on the viewer (the tunnel runs with `BatchMode=yes`, so a
+  password prompt would just fail — set up public keys once). First-time host keys
+  are accepted with `StrictHostKeyChecking=accept-new`. A mesh VPN such as
+  Tailscale works equally well (then plaintext `ws://` rides the encrypted
+  tailnet, and you can share straight to the VPN address).
+- **Plaintext on a trusted LAN (`sharePaneOnLan`).** Binds every interface and
+  builds the URL with this machine's LAN IP, so other PCs can connect directly.
+  This is **plaintext over the network** (token-only protection) — use it only on
+  a network you trust. The dialog warns you, and you may need to allow Windows
+  Terminal through Windows Firewall on Private networks. Prefer the SSH tunnel
+  whenever the channel isn't fully trusted.
+
+- **Action:** `sharePane` (id `Terminal.SharePane`) — share the focused pane (localhost)
+- **Action:** `sharePaneOnLan` (id `Terminal.SharePaneOnLan`) — share it on the LAN (plaintext; opt-in)
 - **Action:** `stopSharePane` (id `Terminal.StopSharePane`) — stop sharing it
 - **Action:** `connectSharedSession` (id `Terminal.ConnectSharedSession`) — open a viewer pane
+- **Action:** `connectSharedSessionViaSsh` (id `Terminal.ConnectSharedSessionViaSsh`) — open a viewer over an auto-launched SSH tunnel
 
 #### 8. Dedicated `keybindings.json`
 
@@ -138,8 +166,10 @@ bind the ones you want in `settings.json` (or via the Settings UI → Actions):
         { "id": "Terminal.OpenBrowserPane", "keys": "alt+b" },
         { "id": "Terminal.OpenWingetPane", "keys": "alt+w" },
         { "id": "Terminal.SharePane", "keys": "alt+s" },
+        { "id": "Terminal.SharePaneOnLan", "keys": "alt+shift+l" },
         { "id": "Terminal.StopSharePane", "keys": "alt+shift+s" },
-        { "id": "Terminal.ConnectSharedSession", "keys": "alt+shift+c" }
+        { "id": "Terminal.ConnectSharedSession", "keys": "alt+shift+c" },
+        { "id": "Terminal.ConnectSharedSessionViaSsh", "keys": "alt+shift+t" }
     ]
 }
 ```
@@ -152,8 +182,10 @@ bind the ones you want in `settings.json` (or via the Settings UI → Actions):
 | `Terminal.OpenBrowserPane` | `alt+b` | Open a WebView2 web browser pane |
 | `Terminal.OpenWingetPane` | `alt+w` | Open the winget package-manager pane |
 | `Terminal.SharePane` | `alt+s` | Share the focused pane read-only (localhost) |
+| `Terminal.SharePaneOnLan` | `alt+shift+l` | Share the focused pane on the LAN (plaintext; opt-in) |
 | `Terminal.StopSharePane` | `alt+shift+s` | Stop sharing the focused pane |
 | `Terminal.ConnectSharedSession` | `alt+shift+c` | Open a viewer pane for a shared session |
+| `Terminal.ConnectSharedSessionViaSsh` | `alt+shift+t` | Open a viewer over an auto-launched SSH tunnel |
 
 ---
 
