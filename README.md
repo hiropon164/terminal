@@ -12,7 +12,8 @@ This is a **personal fork** of [microsoft/terminal](https://github.com/microsoft
 
 ### Custom changes in this fork
 
-This fork adds a few pane-management conveniences on top of upstream.
+This fork adds a few pane-management conveniences and several new pane types
+(file browser, web browser, winget) on top of upstream.
 
 #### 1. Equalize panes
 
@@ -43,7 +44,44 @@ over. Releasing outside the pane area cancels the move.
 > `Alt`+drag **block (rectangular) selection** is not available via that gesture
 > in this fork.
 
-#### 4. Dedicated `keybindings.json`
+#### 4. File browser pane
+
+A keyboard-driven file browser and viewer hosted as a pane. Move with the arrow
+keys, `Enter` to open a folder, `Backspace` to go up, and `D` for the drive
+list. Selecting a file previews it — text (UTF-8/UTF-16, with BOM handling) in a
+viewer, images (`png`/`jpg`/`gif`/`bmp`/`ico`/`tiff`/`webp`) rendered inline.
+You can also drag files or folders from Explorer onto the pane.
+
+- **Action:** `openFileBrowser` (id `Terminal.OpenFileBrowser`)
+- **Action:** `selectFileBrowserDrive` (id `Terminal.SelectFileBrowserDrive`) — show the drive list
+
+#### 5. Web browser pane
+
+A [WebView2](https://learn.microsoft.com/microsoft-edge/webview2/) (Chromium/Edge)
+browser hosted as a pane: an address bar with back / forward / reload and a
+paste-from-clipboard button. Type a URL, or a search term to send it to your
+configured search engine. The page shown on open is the `browserHomePage`
+global setting.
+
+- **Action:** `openBrowserPane` (id `Terminal.OpenBrowserPane`)
+- **Setting:** `browserHomePage` (global; default `https://www.google.com`)
+- Requires the WebView2 Runtime (ships with Microsoft Edge). The portable
+  distribution bundles the required `WebView2Loader.dll` and
+  `Microsoft.Web.WebView2.Core.dll` automatically.
+
+#### 6. winget pane
+
+A small GUI front-end for the [Windows Package Manager](https://github.com/microsoft/winget-cli)
+(`winget`): search packages, list installed / upgradable, and
+Install / Upgrade / Upgrade All / Uninstall from the list. It runs `winget.exe`
+under the hood, so Install/Upgrade may prompt for elevation (UAC). At most one
+winget pane exists at a time; opening it again focuses the existing one.
+
+- **Action:** `openWingetPane` (id `Terminal.OpenWingetPane`)
+- Requires `winget` (Windows Package Manager) to be installed (it ships with
+  current Windows 10/11).
+
+#### 7. Dedicated `keybindings.json`
 
 Key bindings can be managed in a separate `keybindings.json` file in the app's
 `LocalState` folder. Unlike settings *fragments*, this file is allowed to define
@@ -54,14 +92,16 @@ of your settings.
 #### Keybindings
 
 Drag-to-resize and `Alt`+drag-to-move are mouse gestures and need no key
-binding. The only new keyboard action is `equalizePanes`, which is **not bound
-to any key by default** — bind it yourself in `settings.json` (or via the
-Settings UI → Actions):
+binding. The new keyboard actions below are **not bound to any key by default** —
+bind the ones you want in `settings.json` (or via the Settings UI → Actions):
 
 ```jsonc
 {
     "keybindings": [
-        { "id": "Terminal.EqualizePanes", "keys": "ctrl+alt+e" }
+        { "id": "Terminal.EqualizePanes", "keys": "ctrl+alt+e" },
+        { "id": "Terminal.OpenFileBrowser", "keys": "alt+f" },
+        { "id": "Terminal.OpenBrowserPane", "keys": "alt+b" },
+        { "id": "Terminal.OpenWingetPane", "keys": "alt+w" }
     ]
 }
 ```
@@ -69,6 +109,10 @@ Settings UI → Actions):
 | Action ID | Suggested keys | What it does |
 |-----------|----------------|--------------|
 | `Terminal.EqualizePanes` | `ctrl+alt+e` | Make all panes in the current tab equal-sized |
+| `Terminal.OpenFileBrowser` | `alt+f` | Open the keyboard file browser pane |
+| `Terminal.SelectFileBrowserDrive` | *(unbound)* | Show the drive list in the focused file browser |
+| `Terminal.OpenBrowserPane` | `alt+b` | Open a WebView2 web browser pane |
+| `Terminal.OpenWingetPane` | `alt+w` | Open the winget package-manager pane |
 
 ---
 
