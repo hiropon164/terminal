@@ -77,10 +77,12 @@ namespace winrt::TerminalApp::implementation
 
     PaneShareSession::PaneShareSession(ITerminalConnection connection,
                                        winrt::Microsoft::Terminal::Control::ControlCore core,
-                                       std::string token) :
+                                       std::string token,
+                                       bool allInterfaces) :
         _conn{ std::move(connection) },
         _core{ std::move(core) },
-        _token{ std::move(token) }
+        _token{ std::move(token) },
+        _allInterfaces{ allInterfaces }
     {
     }
 
@@ -89,7 +91,8 @@ namespace winrt::TerminalApp::implementation
         auto self = shared_from_this();
 
         pane_sharing::TransportServerOptions opts;
-        opts.bindHost = L"localhost"; // M7
+        opts.bindHost = L"localhost"; // M7 (default)
+        opts.allInterfaces = _allInterfaces; // opt-in LAN exposure
         opts.port = 0; // ephemeral
         opts.protocol.token = _token;
         opts.protocol.allowWrite = false; // read-only for now (M2/M4 trivially hold)

@@ -15,7 +15,11 @@
 #include <random>
 #include <cwctype>
 #include <algorithm>
+#include <chrono>
 #include <winrt/Windows.ApplicationModel.DataTransfer.h>
+#include <winrt/Windows.Networking.h>
+#include <winrt/Windows.Networking.Connectivity.h>
+#include <winrt/Windows.Networking.Sockets.h>
 #include "../../types/inc/utils.hpp"
 #include "../TerminalSettingsAppAdapterLib/TerminalSettings.h"
 #include "Utils.h"
@@ -1740,11 +1744,90 @@ namespace winrt::TerminalApp::implementation
     void TerminalPage::_HandleSharePane(const IInspectable& /*sender*/,
                                         const ActionEventArgs& args)
     {
-        _StartPaneShare();
+        _StartPaneShare(false);
         args.Handled(true);
     }
 
-    winrt::fire_and_forget TerminalPage::_StartPaneShare()
+    void TerminalPage::_HandleSharePaneOnLan(const IInspectable& /*sender*/,
+                                             const ActionEventArgs& args)
+    {
+        _StartPaneShare(true);
+        args.Handled(true);
+    }
+
+    // Collects this machine's non-loopback IPv4 addresses for a LAN share URL.
+    // `best` is set to the most likely reachable one: the address on the adapter
+    // that carries the default/internet route (so VMware/Hyper-V host-only
+    // adapters don't win), falling back to the first private-range address.
+    static std::vector<std::wstring> _LocalIPv4s(std::wstring& best)
+    {
+        using namespace winrt::Windows::Networking;
+        using namespace winrt::Windows::Networking::Connectivity;
+
+        best.clear();
+        std::vector<std::wstring> all;
+
+        winrt::guid internetAdapter{};
+        bool haveInternet = false;
+        try
+        {
+            if (const auto prof = NetworkInformation::GetInternetConnectionProfile())
+            {
+                if (const auto na = prof.NetworkAdapter())
+                {
+                    internetAdapter = na.NetworkAdapterId();
+                    haveInternet = true;
+                }
+            }
+        }
+        catch (...)
+        {
+        }
+
+        std::wstring firstPrivate;
+        try
+        {
+            for (auto const& h : NetworkInformation::GetHostNames())
+            {
+                if (h.Type() != HostNameType::Ipv4)
+                {
+                    continue;
+                }
+                const std::wstring ip{ h.CanonicalName() };
+                if (ip.rfind(L"127.", 0) == 0)
+                {
+                    continue; // loopback
+                }
+                all.push_back(ip);
+
+                if (haveInternet && best.empty())
+                {
+                    if (const auto info = h.IPInformation())
+                    {
+                        if (const auto na = info.NetworkAdapter(); na && na.NetworkAdapterId() == internetAdapter)
+                        {
+                            best = ip; // the address on the internet/default-route adapter
+                        }
+                    }
+                }
+                if (firstPrivate.empty() && (ip.rfind(L"192.168.", 0) == 0 || ip.rfind(L"10.", 0) == 0 || ip.rfind(L"172.", 0) == 0))
+                {
+                    firstPrivate = ip;
+                }
+            }
+        }
+        catch (...)
+        {
+        }
+
+        if (best.empty())
+        {
+            best = !firstPrivate.empty() ? firstPrivate : (all.empty() ? std::wstring{} : all.front());
+        }
+        return all;
+    }
+
+    winrt::fire_and_forget TerminalPage::_StartPaneShare(bool lan)
     {
         auto strongThis = get_strong();
 
@@ -1770,7 +1853,7 @@ namespace winrt::TerminalApp::implementation
             }
         }
 
-        auto session = std::make_shared<PaneShareSession>(connection, control.Core(), token);
+        auto session = std::make_shared<PaneShareSession>(connection, control.Core(), token, lan);
         const bool ok = co_await session->StartAsync();
 
         // StartAsync resumes off the UI thread (socket bind); come back to touch XAML.
@@ -1835,7 +1918,34 @@ namespace winrt::TerminalApp::implementation
         }
 
         const auto port = session->Port();
-        const std::wstring url = L"ws://localhost:" + std::to_wstring(port) + L"/?token=" + std::wstring(token.begin(), token.end());
+        std::wstring host = L"localhost";
+        std::wstring note = L"Localhost only. Expose externally only behind a TLS reverse proxy.";
+        if (lan)
+        {
+            std::wstring best;
+            const auto ips = _LocalIPv4s(best);
+            host = best.empty() ? L"localhost" : best;
+
+            std::wstring others;
+            for (const auto& ip : ips)
+            {
+                if (ip != best)
+                {
+                    others += (others.empty() ? L"" : L", ") + ip;
+                }
+            }
+
+            note = L"Shared on your local network over plaintext (ws://). Anyone on your "
+                   L"LAN with this URL and token can read this pane. The other PC opens it "
+                   L"with \"connectSharedSession\" (or \"connectSharedSessionViaSsh\" for an "
+                   L"encrypted tunnel).";
+            if (!others.empty())
+            {
+                note += L"\r\nIf the other PC can't reach " + host + L", try one of: " + others + L".";
+            }
+            note += L"\r\nIf it can't connect, allow WindowsTerminal through Windows Firewall on Private networks.";
+        }
+        const std::wstring url = L"ws://" + host + L":" + std::to_wstring(port) + L"/?token=" + std::wstring(token.begin(), token.end());
 
         try
         {
@@ -1850,11 +1960,11 @@ namespace winrt::TerminalApp::implementation
         if (presenter)
         {
             winrt::Windows::UI::Xaml::Controls::ContentDialog dlg;
-            dlg.Title(winrt::box_value(winrt::hstring{ L"Pane sharing started (read-only)" }));
+            dlg.Title(winrt::box_value(winrt::hstring{ lan ? L"Pane sharing on the LAN (read-only)" : L"Pane sharing started (read-only)" }));
             winrt::Windows::UI::Xaml::Controls::TextBox tb;
             tb.IsReadOnly(true);
             tb.TextWrapping(winrt::Windows::UI::Xaml::TextWrapping::Wrap);
-            tb.Text(winrt::hstring{ L"Share URL (copied to clipboard):\r\n" + url + L"\r\n\r\nLocalhost only. Expose externally only behind a TLS reverse proxy." });
+            tb.Text(winrt::hstring{ L"Share URL (copied to clipboard):\r\n" + url + L"\r\n\r\n" + note });
             dlg.Content(tb);
             dlg.CloseButtonText(L"OK");
             co_await presenter.ShowDialog(dlg);
@@ -1970,18 +2080,228 @@ namespace winrt::TerminalApp::implementation
             }
         }
 
-        const auto remote = winrt::make_self<RemoteConnection>(winrt::hstring{ url }, winrt::hstring{ token });
+        _OpenRemoteViewer(url, token, nullptr);
+    }
 
+    // Creates a RemoteConnection for a shared session and opens it in a new pane.
+    // If `tunnelProc` is non-null, ownership of that SSH tunnel process is handed
+    // to the connection (terminated when the viewer closes) -- but only once the
+    // pane is successfully created; on failure the caller must clean it up.
+    bool TerminalPage::_OpenRemoteViewer(const std::wstring& url, const std::wstring& token, void* tunnelProc)
+    {
         const auto tabImpl = _senderOrFocusedTab(nullptr);
         if (!tabImpl)
         {
-            co_return;
+            return false;
         }
+        const auto remote = winrt::make_self<RemoteConnection>(winrt::hstring{ url }, winrt::hstring{ token });
         Microsoft::Terminal::Settings::Model::NewTerminalArgs newTerminalArgs{};
         const auto pane = _MakeTerminalPane(newTerminalArgs, tabImpl.as<winrt::TerminalApp::Tab>(), *remote);
-        if (pane)
+        if (!pane)
         {
-            _SplitPane(tabImpl, SplitDirection::Automatic, 0.5f, pane);
+            return false;
+        }
+        if (tunnelProc)
+        {
+            remote->SetTunnelProcess(tunnelProc);
+        }
+        _SplitPane(tabImpl, SplitDirection::Automatic, 0.5f, pane);
+        return true;
+    }
+
+    void TerminalPage::_HandleConnectSharedSessionViaSsh(const IInspectable& /*sender*/,
+                                                         const ActionEventArgs& args)
+    {
+        _ConnectSharedSessionViaSsh();
+        args.Handled(true);
+    }
+
+    // Picks an unused loopback TCP port by binding ephemerally and releasing it.
+    static winrt::Windows::Foundation::IAsyncOperation<uint16_t> _FindFreeLocalPortAsync()
+    {
+        try
+        {
+            winrt::Windows::Networking::Sockets::StreamSocketListener l;
+            co_await l.BindEndpointAsync(winrt::Windows::Networking::HostName{ L"localhost" }, L"");
+            const uint16_t p = static_cast<uint16_t>(std::stoul(std::wstring{ l.Information().LocalPort() }));
+            l.Close();
+            co_return p;
+        }
+        catch (...)
+        {
+            co_return 0;
+        }
+    }
+
+    // ws://host:PORT/... -> PORT (0 if absent/unparseable).
+    static uint16_t _ParseWsPort(const std::wstring& url)
+    {
+        const auto schemeEnd = url.find(L"://");
+        if (schemeEnd == std::wstring::npos)
+        {
+            return 0;
+        }
+        const auto authStart = schemeEnd + 3;
+        const auto authEnd = url.find(L'/', authStart);
+        const std::wstring authority = url.substr(authStart, authEnd == std::wstring::npos ? std::wstring::npos : authEnd - authStart);
+        const auto colon = authority.rfind(L':');
+        if (colon == std::wstring::npos)
+        {
+            return 0;
+        }
+        try
+        {
+            const unsigned long p = std::stoul(authority.substr(colon + 1));
+            return p > 0 && p <= 65535 ? static_cast<uint16_t>(p) : 0;
+        }
+        catch (...)
+        {
+            return 0;
+        }
+    }
+
+    // Launches `ssh -N -L <local>:localhost:<remote> <target>` detached, non-
+    // interactively. Returns the process HANDLE (as void*) or null. Requires
+    // key/agent auth (BatchMode) so it never blocks on a password prompt.
+    static void* _SpawnSshTunnel(const std::wstring& target, uint16_t localPort, uint16_t remotePort)
+    {
+        std::wstring cmd = L"ssh -N -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ExitOnForwardFailure=yes -L " + std::to_wstring(localPort) + L":localhost:" + std::to_wstring(remotePort) + L" " + target;
+        STARTUPINFOW si{};
+        si.cb = sizeof(si);
+        PROCESS_INFORMATION pi{};
+        if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+        {
+            return nullptr;
+        }
+        CloseHandle(pi.hThread);
+        return pi.hProcess;
+    }
+
+    winrt::fire_and_forget TerminalPage::_ConnectSharedSessionViaSsh()
+    {
+        auto strongThis = get_strong();
+
+        const auto presenter{ _dialogPresenter.get() };
+        if (!presenter)
+        {
+            co_return;
+        }
+
+        winrt::Windows::UI::Xaml::Controls::TextBox sshBox;
+        sshBox.PlaceholderText(L"user@192.168.0.10");
+        sshBox.AcceptsReturn(false);
+
+        winrt::Windows::UI::Xaml::Controls::TextBox urlBox;
+        urlBox.PlaceholderText(L"ws://localhost:PORT/?token=...");
+        urlBox.AcceptsReturn(false);
+        try
+        {
+            const auto content = winrt::Windows::ApplicationModel::DataTransfer::Clipboard::GetContent();
+            if (content && content.Contains(winrt::Windows::ApplicationModel::DataTransfer::StandardDataFormats::Text()))
+            {
+                const auto clip = co_await content.GetTextAsync();
+                co_await wil::resume_foreground(Dispatcher());
+                std::wstring c{ clip.c_str() };
+                if (c.rfind(L"ws://", 0) == 0 || c.rfind(L"wss://", 0) == 0)
+                {
+                    urlBox.Text(clip);
+                }
+            }
+        }
+        catch (...)
+        {
+        }
+
+        winrt::Windows::UI::Xaml::Controls::StackPanel panel;
+        panel.Spacing(6);
+        const auto label = [](std::wstring_view t) {
+            winrt::Windows::UI::Xaml::Controls::TextBlock tb;
+            tb.Text(winrt::hstring{ t });
+            return tb;
+        };
+        panel.Children().Append(label(L"SSH target (user@host):"));
+        panel.Children().Append(sshBox);
+        panel.Children().Append(label(L"Share URL (the host's ws://localhost:PORT/?token=...):"));
+        panel.Children().Append(urlBox);
+
+        winrt::Windows::UI::Xaml::Controls::ContentDialog dlg;
+        dlg.Title(winrt::box_value(winrt::hstring{ L"Connect over an SSH tunnel" }));
+        dlg.Content(panel);
+        dlg.PrimaryButtonText(L"Connect");
+        dlg.CloseButtonText(L"Cancel");
+        dlg.DefaultButton(winrt::Windows::UI::Xaml::Controls::ContentDialogButton::Primary);
+
+        if (co_await presenter.ShowDialog(dlg) != winrt::Windows::UI::Xaml::Controls::ContentDialogResult::Primary)
+        {
+            co_return;
+        }
+
+        const auto trim = [](std::wstring s) {
+            while (!s.empty() && iswspace(s.front()))
+            {
+                s.erase(s.begin());
+            }
+            while (!s.empty() && iswspace(s.back()))
+            {
+                s.pop_back();
+            }
+            return s;
+        };
+        const std::wstring sshTarget = trim(std::wstring{ sshBox.Text().c_str() });
+        const std::wstring url = trim(std::wstring{ urlBox.Text().c_str() });
+
+        const auto fail = [&](std::wstring_view msg) -> winrt::Windows::Foundation::IAsyncAction {
+            winrt::Windows::UI::Xaml::Controls::ContentDialog d;
+            d.Title(winrt::box_value(winrt::hstring{ L"SSH tunnel" }));
+            d.Content(winrt::box_value(winrt::hstring{ msg }));
+            d.CloseButtonText(L"OK");
+            co_await presenter.ShowDialog(d);
+        };
+
+        const uint16_t remotePort = _ParseWsPort(url);
+        if (sshTarget.empty() || remotePort == 0)
+        {
+            co_await fail(L"Enter an SSH target (user@host) and the host's ws://localhost:PORT/?token=... URL.");
+            co_return;
+        }
+
+        std::wstring token;
+        if (const auto p = url.find(L"token="); p != std::wstring::npos)
+        {
+            token = url.substr(p + 6);
+            if (const auto amp = token.find(L'&'); amp != std::wstring::npos)
+            {
+                token = token.substr(0, amp);
+            }
+        }
+
+        const uint16_t localPort = co_await _FindFreeLocalPortAsync();
+        co_await wil::resume_foreground(Dispatcher());
+        if (localPort == 0)
+        {
+            co_await fail(L"Could not reserve a local port.");
+            co_return;
+        }
+
+        void* proc = _SpawnSshTunnel(sshTarget, localPort, remotePort);
+        if (!proc)
+        {
+            co_await fail(L"Could not start ssh. Is the OpenSSH client installed and on PATH?");
+            co_return;
+        }
+
+        // Give the forward a moment to come up before connecting.
+        co_await winrt::resume_after(std::chrono::milliseconds(1000));
+        co_await wil::resume_foreground(Dispatcher());
+
+        const std::wstring localUrl = L"ws://localhost:" + std::to_wstring(localPort) + L"/?token=" + token;
+        if (!_OpenRemoteViewer(localUrl, token, proc))
+        {
+            // We started the tunnel but couldn't open the pane -- don't leak ssh.
+            const auto h = static_cast<HANDLE>(proc);
+            TerminateProcess(h, 0);
+            CloseHandle(h);
+            co_await fail(L"Could not open the viewer pane.");
         }
     }
 

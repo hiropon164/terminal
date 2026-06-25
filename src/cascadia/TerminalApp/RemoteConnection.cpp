@@ -107,6 +107,15 @@ namespace winrt::TerminalApp::implementation
         }
         _transport.reset();
         _client.reset();
+
+        // Tear down the SSH tunnel, if this viewer launched one.
+        if (_tunnelProc)
+        {
+            const auto h = static_cast<HANDLE>(_tunnelProc);
+            _tunnelProc = nullptr;
+            TerminateProcess(h, 0);
+            CloseHandle(h);
+        }
     }
 
     ConnectionState RemoteConnection::State() const noexcept

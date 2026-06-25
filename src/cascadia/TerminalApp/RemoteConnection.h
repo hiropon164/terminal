@@ -34,6 +34,12 @@ namespace winrt::TerminalApp::implementation
         winrt::guid SessionId() const noexcept { return {}; }
         winrt::Microsoft::Terminal::TerminalConnection::ConnectionState State() const noexcept;
 
+        // Optionally tie a background SSH tunnel process to this connection: it is
+        // terminated when the viewer connection closes. `processHandle` is a Win32
+        // HANDLE (kept as void* to avoid <windows.h> in this header); ownership is
+        // transferred here.
+        void SetTunnelProcess(void* processHandle) noexcept { _tunnelProc = processHandle; }
+
         til::event<winrt::Microsoft::Terminal::TerminalConnection::TerminalOutputHandler> TerminalOutput;
         til::typed_event<winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection, winrt::Windows::Foundation::IInspectable> StateChanged;
 
@@ -48,5 +54,6 @@ namespace winrt::TerminalApp::implementation
         std::shared_ptr<pane_sharing::SharingTransportClient> _transport;
         std::atomic<winrt::Microsoft::Terminal::TerminalConnection::ConnectionState> _state{ winrt::Microsoft::Terminal::TerminalConnection::ConnectionState::NotConnected };
         std::string _utf8Pending; // incomplete trailing UTF-8 bytes carried to next chunk
+        void* _tunnelProc = nullptr; // owned SSH tunnel process HANDLE, or null
     };
 }

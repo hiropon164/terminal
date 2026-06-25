@@ -333,8 +333,10 @@ namespace winrt::TerminalApp::implementation
         // Active read-only pane-sharing sessions (keeps them and their output
         // subscriptions alive). See PaneShareSession / SharingEngine.
         std::vector<std::shared_ptr<PaneShareSession>> _paneShares;
-        winrt::fire_and_forget _StartPaneShare();
+        winrt::fire_and_forget _StartPaneShare(bool lan);
         winrt::fire_and_forget _ConnectSharedSession();
+        winrt::fire_and_forget _ConnectSharedSessionViaSsh();
+        bool _OpenRemoteViewer(const std::wstring& url, const std::wstring& token, void* tunnelProc);
 
         std::shared_ptr<Toast> _windowIdToast{ nullptr };
         std::shared_ptr<Toast> _actionSavedToast{ nullptr };

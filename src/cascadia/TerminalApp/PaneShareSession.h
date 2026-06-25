@@ -24,7 +24,8 @@ namespace winrt::TerminalApp::implementation
     public:
         PaneShareSession(winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection connection,
                          winrt::Microsoft::Terminal::Control::ControlCore core,
-                         std::string token);
+                         std::string token,
+                         bool allInterfaces = false);
 
         // Starts the server and subscribes to the pane output. false on bind failure.
         winrt::Windows::Foundation::IAsyncOperation<bool> StartAsync();
@@ -45,6 +46,7 @@ namespace winrt::TerminalApp::implementation
         winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection _conn{ nullptr };
         winrt::Microsoft::Terminal::Control::ControlCore _core{ nullptr };
         std::string _token;
+        bool _allInterfaces = false;
         std::shared_ptr<pane_sharing::SharingTransportServer> _server;
         winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection::TerminalOutput_revoker _revoker;
         char16_t _pendingHigh = 0; // dangling UTF-16 high surrogate carried across chunks

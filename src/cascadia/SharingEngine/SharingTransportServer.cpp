@@ -78,7 +78,16 @@ namespace pane_sharing
         try
         {
             const hstring service = _opts.port == 0 ? hstring{ L"" } : hstring{ std::to_wstring(_opts.port) };
-            co_await _listener.BindEndpointAsync(HostName{ _opts.bindHost }, service);
+            if (_opts.allInterfaces)
+            {
+                // Bind every local interface so other machines on the LAN can
+                // reach it. Opt-in only; plaintext ws:// over the network.
+                co_await _listener.BindServiceNameAsync(service);
+            }
+            else
+            {
+                co_await _listener.BindEndpointAsync(HostName{ _opts.bindHost }, service); // M7: loopback
+            }
         }
         catch (...)
         {

@@ -33,6 +33,7 @@ namespace pane_sharing
     struct TransportServerOptions
     {
         std::wstring bindHost = L"localhost"; // M7: loopback by default
+        bool allInterfaces = false; // true => bind every interface (LAN-reachable); opt-in only
         uint16_t port = 0; // 0 => OS-assigned ephemeral port
         ServerConfig protocol; // token, allowWrite, limits
     };
