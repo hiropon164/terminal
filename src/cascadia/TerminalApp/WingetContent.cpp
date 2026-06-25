@@ -5,10 +5,13 @@
 #include "WingetContent.h"
 
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Interop.h>
 #include <wil/cppwinrt_helpers.h>
 
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <cwctype>
 
 using namespace winrt::Windows::UI::Xaml;
 using namespace winrt::Windows::UI::Xaml::Controls;
@@ -89,36 +92,66 @@ namespace winrt::TerminalApp::implementation
         _list.Margin({ 4, 0, 4, 4 });
         _list.SelectionMode(ListViewSelectionMode::Single);
         _list.FontFamily(Media::FontFamily{ L"Cascadia Mono, Consolas" });
+        // Tighten the rows: the default ListViewItem reserves ~40px min height plus
+        // generous padding, which leaves the single-line entries looking sparse.
+        {
+            Style itemStyle{ winrt::xaml_typename<ListViewItem>() };
+            itemStyle.Setters().Append(Setter{ FrameworkElement::MinHeightProperty(), winrt::box_value(0.0) });
+            itemStyle.Setters().Append(Setter{ Control::PaddingProperty(), winrt::box_value(Thickness{ 8, 1, 8, 1 }) });
+            _list.ItemContainerStyle(itemStyle);
+        }
+        // Make the selected row clearly stand out by inverting it: the normal rows
+        // are light text on a dark background, so the selected row is dark text on
+        // a light background.
+        {
+            const auto selBg = Media::SolidColorBrush{ winrt::Windows::UI::ColorHelper::FromArgb(0xFF, 0xFF, 0xFF, 0xFF) };
+            const auto selFg = Media::SolidColorBrush{ winrt::Windows::UI::ColorHelper::FromArgb(0xFF, 0x00, 0x00, 0x00) };
+            auto res = _list.Resources();
+            for (const auto key : { L"ListViewItemBackgroundSelected", L"ListViewItemBackgroundSelectedPointerOver", L"ListViewItemBackgroundSelectedPressed" })
+            {
+                res.Insert(winrt::box_value(winrt::hstring{ key }), selBg);
+            }
+            for (const auto key : { L"ListViewItemForegroundSelected", L"ListViewItemForegroundSelectedPointerOver", L"ListViewItemForegroundSelectedPressed" })
+            {
+                res.Insert(winrt::box_value(winrt::hstring{ key }), selFg);
+            }
+        }
         Grid::SetRow(_list, 1);
         _root.Children().Append(_list);
 
-        // --- Action bar: [Install] [Upgrade] [Uninstall]   <status> ---
+        // --- Action bar: [Install] [Upgrade] [Upgrade All] [Uninstall]  <status> ---
         auto actions = Grid{};
         Grid::SetRow(actions, 2);
-        for (auto t : { GridUnitType::Auto, GridUnitType::Auto, GridUnitType::Auto, GridUnitType::Star })
+        for (auto t : { GridUnitType::Auto, GridUnitType::Auto, GridUnitType::Auto, GridUnitType::Auto, GridUnitType::Star })
         {
             auto c = ColumnDefinition{};
             c.Width(GridLengthHelper::FromValueAndType(t == GridUnitType::Star ? 1 : 0, t));
             actions.ColumnDefinitions().Append(c);
         }
 
-        auto installBtn = makeButton(L"Install", 0);
-        installBtn.Click([weak = get_weak()](auto&&, auto&&) { if (auto self = weak.get()) self->_ActionOnSelected(L"install"); });
-        actions.Children().Append(installBtn);
+        _installBtn = makeButton(L"Install", 0);
+        _installBtn.Click([weak = get_weak()](auto&&, auto&&) { if (auto self = weak.get()) self->_ActionOnSelected(L"install"); });
+        actions.Children().Append(_installBtn);
 
-        auto upgradeBtn = makeButton(L"Upgrade", 1);
-        upgradeBtn.Click([weak = get_weak()](auto&&, auto&&) { if (auto self = weak.get()) self->_ActionOnSelected(L"upgrade"); });
-        actions.Children().Append(upgradeBtn);
+        _upgradeBtn = makeButton(L"Upgrade", 1);
+        _upgradeBtn.Click([weak = get_weak()](auto&&, auto&&) { if (auto self = weak.get()) self->_ActionOnSelected(L"upgrade"); });
+        actions.Children().Append(_upgradeBtn);
 
-        auto uninstallBtn = makeButton(L"Uninstall", 2);
-        uninstallBtn.Click([weak = get_weak()](auto&&, auto&&) { if (auto self = weak.get()) self->_ActionOnSelected(L"uninstall"); });
-        actions.Children().Append(uninstallBtn);
+        _upgradeAllBtn = makeButton(L"Upgrade All", 2);
+        _upgradeAllBtn.Click([weak = get_weak()](auto&&, auto&&) { if (auto self = weak.get()) self->_UpgradeAll(); });
+        actions.Children().Append(_upgradeAllBtn);
+
+        _uninstallBtn = makeButton(L"Uninstall", 3);
+        _uninstallBtn.Click([weak = get_weak()](auto&&, auto&&) { if (auto self = weak.get()) self->_ActionOnSelected(L"uninstall"); });
+        actions.Children().Append(_uninstallBtn);
+
+        _UpdateButtonStates();
 
         _status = TextBlock{};
         _status.Margin({ 8, 4, 4, 4 });
         _status.VerticalAlignment(VerticalAlignment::Center);
         _status.Text(L"Ready");
-        Grid::SetColumn(_status, 3);
+        Grid::SetColumn(_status, 4);
         actions.Children().Append(_status);
 
         _root.Children().Append(actions);
@@ -152,6 +185,13 @@ namespace winrt::TerminalApp::implementation
 
     void WingetContent::_Search()
     {
+        // Ignore actions while a winget run is in flight: otherwise we'd flip the
+        // mode/buttons but the new run would be dropped by _RunWinget's busy guard,
+        // leaving the UI out of sync with the list still being shown.
+        if (_busy)
+        {
+            return;
+        }
         std::wstring q{ _search.Text().c_str() };
         // trim
         while (!q.empty() && iswspace(q.front()))
@@ -166,21 +206,77 @@ namespace winrt::TerminalApp::implementation
         {
             return;
         }
+        _mode = Mode::Search;
+        _UpdateButtonStates();
         _RunWinget({ L"search", q, L"--disable-interactivity" }, true);
     }
 
     void WingetContent::_ShowInstalled()
     {
+        if (_busy)
+        {
+            return;
+        }
+        _mode = Mode::Installed;
+        _UpdateButtonStates();
         _RunWinget({ L"list", L"--disable-interactivity" }, true);
     }
 
     void WingetContent::_ShowUpgradable()
     {
+        if (_busy)
+        {
+            return;
+        }
+        _mode = Mode::Upgradable;
+        _UpdateButtonStates();
         _RunWinget({ L"upgrade", L"--disable-interactivity" }, true);
+    }
+
+    void WingetContent::_UpdateButtonStates()
+    {
+        // Enable only the actions that make sense for the current list:
+        //   Search     -> Install
+        //   Installed   -> Uninstall
+        //   Upgradable  -> Upgrade, Upgrade All
+        const bool search = _mode == Mode::Search;
+        const bool installed = _mode == Mode::Installed;
+        const bool upgradable = _mode == Mode::Upgradable;
+        if (_installBtn)
+        {
+            _installBtn.IsEnabled(search);
+        }
+        if (_upgradeBtn)
+        {
+            _upgradeBtn.IsEnabled(upgradable);
+        }
+        if (_upgradeAllBtn)
+        {
+            _upgradeAllBtn.IsEnabled(upgradable);
+        }
+        if (_uninstallBtn)
+        {
+            _uninstallBtn.IsEnabled(installed);
+        }
+    }
+
+    void WingetContent::_UpgradeAll()
+    {
+        if (_busy)
+        {
+            return;
+        }
+        // --include-unknown so packages whose installed version winget can't
+        // determine are still upgraded.
+        _RunWinget({ L"upgrade", L"--all", L"--include-unknown", L"--accept-package-agreements", L"--accept-source-agreements", L"--disable-interactivity" }, false);
     }
 
     void WingetContent::_ActionOnSelected(std::wstring verb)
     {
+        if (_busy)
+        {
+            return;
+        }
         const auto idx = _list.SelectedIndex();
         if (idx < 0 || static_cast<size_t>(idx) >= _entries.size())
         {
@@ -188,6 +284,13 @@ namespace winrt::TerminalApp::implementation
             return;
         }
         const auto id = _entries[idx].id;
+        // Header/installed reference rows are non-selectable, but guard anyway:
+        // never act on a row without a real package id.
+        if (id.empty())
+        {
+            _SetBusy(false, L"Select a package first");
+            return;
+        }
         std::vector<std::wstring> args{ verb, L"--id", id, L"-e", L"--disable-interactivity" };
         if (verb == L"install" || verb == L"upgrade")
         {
@@ -220,12 +323,18 @@ namespace winrt::TerminalApp::implementation
             co_return;
         }
 
+        // Bind the mode to THIS request: _mode can change (and a competing request
+        // be dropped by the _busy guard) while we're awaiting the multi-second
+        // winget run, so reading the member after the await would mis-route output.
+        const Mode requestMode = _mode;
+
         // Everything below is guarded: this is a fire_and_forget coroutine, and an
         // exception escaping it would call winrt::terminate() and crash the process.
         std::string rawBytes;
         DWORD exitCode = 0;
         bool launched = false;
         bool failed = false;
+        size_t resultCount = 0;
         try
         {
             _SetBusy(true, L"Running...");
@@ -326,7 +435,29 @@ namespace winrt::TerminalApp::implementation
             _log.Text(winrt::hstring{ text });
             if (parseList)
             {
-                _ParseTable(text);
+                const auto parsed = _ParseTable(text);
+                resultCount = parsed.size();
+                if (requestMode == Mode::Installed)
+                {
+                    // Refresh the installed-id set used to flag search results.
+                    _installedIds.clear();
+                    for (const auto& e : parsed)
+                    {
+                        std::wstring id = e.id;
+                        std::transform(id.begin(), id.end(), id.begin(), ::towlower);
+                        _installedIds.insert(id);
+                    }
+                }
+                // Only split search results when we actually know what's installed;
+                // otherwise everything would be (mis)labelled "not installed".
+                if (requestMode == Mode::Search && !_installedIds.empty())
+                {
+                    _PopulateSearch(parsed);
+                }
+                else
+                {
+                    _PopulateFlat(parsed);
+                }
             }
         }
         catch (...)
@@ -360,7 +491,7 @@ namespace winrt::TerminalApp::implementation
         }
         else if (parseList)
         {
-            status = winrt::hstring{ L"Done - " + std::to_wstring(_entries.size()) + L" result(s)" };
+            status = winrt::hstring{ L"Done - " + std::to_wstring(resultCount) + L" result(s)" };
         }
         else
         {
@@ -443,8 +574,10 @@ namespace winrt::TerminalApp::implementation
         return 1;
     }
 
-    void WingetContent::_ParseTable(const std::wstring& text)
+    std::vector<WingetContent::Entry> WingetContent::_ParseTable(const std::wstring& text)
     {
+        std::vector<Entry> result;
+
         // Split into lines.
         std::vector<std::wstring> lines;
         {
@@ -495,7 +628,7 @@ namespace winrt::TerminalApp::implementation
         }
         if (dashIdx <= 0)
         {
-            return; // no header row before the separator -> nothing to parse
+            return result; // no header row before the separator -> nothing to parse
         }
 
         // Column start offsets, measured in display columns (each header is a
@@ -525,7 +658,7 @@ namespace winrt::TerminalApp::implementation
         }
         if (offs.size() < 2)
         {
-            return;
+            return result;
         }
 
         const auto slice = [&](const std::wstring& d, size_t k) -> std::wstring {
@@ -558,7 +691,7 @@ namespace winrt::TerminalApp::implementation
             return v.substr(a, b - a + 1);
         };
 
-        for (size_t i = static_cast<size_t>(dashIdx) + 1; i < lines.size() && _entries.size() < 1000; ++i)
+        for (size_t i = static_cast<size_t>(dashIdx) + 1; i < lines.size() && result.size() < 1000; ++i)
         {
             const auto& d = lines[i];
             if (d.find_first_not_of(L' ') == std::wstring::npos)
@@ -569,22 +702,117 @@ namespace winrt::TerminalApp::implementation
             e.name = slice(d, 0);
             e.id = slice(d, 1);
             e.version = slice(d, 2);
-            // Skip trailing summary lines that aren't real package rows.
-            if (e.id.empty() || e.id.find(L' ') != std::wstring::npos)
+            // Skip rows whose id isn't a plausible package id. This drops winget's
+            // trailing summary lines (e.g. "9 upgrades available." / "9 アップグレード
+            // を利用できます。"), whose id column is empty or punctuation. Real
+            // package ids are ASCII like "Publisher.Package".
+            const auto isIdChar = [](wchar_t ch) {
+                return (ch >= L'a' && ch <= L'z') || (ch >= L'A' && ch <= L'Z') || (ch >= L'0' && ch <= L'9');
+            };
+            if (e.id.empty() || e.id.find(L' ') != std::wstring::npos ||
+                std::none_of(e.id.begin(), e.id.end(), isIdChar))
             {
                 continue;
             }
-            _entries.push_back(e);
+            result.push_back(e);
+        }
+        return result;
+    }
+
+    void WingetContent::_PopulateFlat(const std::vector<Entry>& items)
+    {
+        for (const auto& e : items)
+        {
             std::wstring disp = e.name + L"   [" + e.id + L"]";
             if (!e.version.empty())
             {
                 disp += L"   " + e.version;
             }
             _list.Items().Append(winrt::box_value(winrt::hstring{ disp }));
+            _entries.push_back(e);
         }
         if (!_entries.empty())
         {
             _list.SelectedIndex(0);
+        }
+    }
+
+    void WingetContent::_PopulateSearch(const std::vector<Entry>& items)
+    {
+        std::vector<Entry> notInstalled;
+        std::vector<Entry> installed;
+        for (const auto& e : items)
+        {
+            std::wstring id = e.id;
+            std::transform(id.begin(), id.end(), id.begin(), ::towlower);
+            if (_installedIds.count(id) != 0)
+            {
+                installed.push_back(e);
+            }
+            else
+            {
+                notInstalled.push_back(e);
+            }
+        }
+
+        // Adds one row. Non-selectable rows (section headers and the
+        // already-installed entries) are disabled so they read as reference only.
+        const auto addRow = [&](const std::wstring& text, bool selectable, const Entry& entry) {
+            ListViewItem item{};
+            item.Content(winrt::box_value(winrt::hstring{ text }));
+            item.MinHeight(0);
+            item.Padding(Thickness{ 8, 1, 8, 1 });
+            if (!selectable)
+            {
+                item.IsEnabled(false);
+            }
+            _list.Items().Append(item);
+            _entries.push_back(entry);
+        };
+        const auto rowText = [](const Entry& e) {
+            std::wstring disp = e.name + L"   [" + e.id + L"]";
+            if (!e.version.empty())
+            {
+                disp += L"   " + e.version;
+            }
+            return disp;
+        };
+
+        // Only show the section headers when both sections are present - a lone
+        // header above a single section is just noise.
+        const bool showHeaders = !notInstalled.empty() && !installed.empty();
+
+        const Entry blank;
+        int firstSelectable = -1;
+        if (!notInstalled.empty())
+        {
+            if (showHeaders)
+            {
+                addRow(L"── Not installed ──", false, blank);
+            }
+            for (const auto& e : notInstalled)
+            {
+                if (firstSelectable < 0)
+                {
+                    firstSelectable = static_cast<int>(_entries.size());
+                }
+                addRow(rowText(e), true, e);
+            }
+        }
+        if (!installed.empty())
+        {
+            if (showHeaders)
+            {
+                addRow(L"── Installed (reference only) ──", false, blank);
+            }
+            for (const auto& e : installed)
+            {
+                addRow(rowText(e), false, e);
+            }
+        }
+        if (firstSelectable >= 0)
+        {
+            _list.SelectedIndex(firstSelectable);
         }
     }
 

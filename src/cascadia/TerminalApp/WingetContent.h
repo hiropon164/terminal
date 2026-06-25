@@ -6,6 +6,7 @@
 #include "BasicPaneEvents.h"
 #include <string>
 #include <vector>
+#include <set>
 
 namespace winrt::TerminalApp::implementation
 {
@@ -47,13 +48,28 @@ namespace winrt::TerminalApp::implementation
             std::wstring version;
         };
 
+        enum class Mode
+        {
+            Search,
+            Installed,
+            Upgradable,
+        };
+
         winrt::Windows::UI::Xaml::Controls::Grid _root{ nullptr };
         winrt::Windows::UI::Xaml::Controls::TextBox _search{ nullptr };
         winrt::Windows::UI::Xaml::Controls::ListView _list{ nullptr };
         winrt::Windows::UI::Xaml::Controls::TextBox _log{ nullptr };
         winrt::Windows::UI::Xaml::Controls::TextBlock _status{ nullptr };
+        winrt::Windows::UI::Xaml::Controls::Button _installBtn{ nullptr };
+        winrt::Windows::UI::Xaml::Controls::Button _upgradeBtn{ nullptr };
+        winrt::Windows::UI::Xaml::Controls::Button _upgradeAllBtn{ nullptr };
+        winrt::Windows::UI::Xaml::Controls::Button _uninstallBtn{ nullptr };
+        Mode _mode{ Mode::Installed };
 
         std::vector<Entry> _entries;
+        // Lower-cased ids of installed packages, refreshed whenever the installed
+        // list loads. Used to flag/split already-installed search results.
+        std::set<std::wstring> _installedIds;
         winrt::hstring _title{ L"winget" };
         bool _busy{ false };
         bool _didInitialLoad{ false };
@@ -62,9 +78,13 @@ namespace winrt::TerminalApp::implementation
         void _Search();
         void _ShowInstalled();
         void _ShowUpgradable();
+        void _UpgradeAll();
         void _ActionOnSelected(std::wstring verb);
+        void _UpdateButtonStates();
         winrt::fire_and_forget _RunWinget(std::vector<std::wstring> args, bool parseList);
-        void _ParseTable(const std::wstring& text);
+        std::vector<Entry> _ParseTable(const std::wstring& text);
+        void _PopulateFlat(const std::vector<Entry>& items);
+        void _PopulateSearch(const std::vector<Entry>& items);
         void _SetBusy(bool busy, const winrt::hstring& status);
         static void _StripAnsi(std::wstring& s);
         static int _DisplayWidth(wchar_t c);
