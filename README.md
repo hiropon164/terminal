@@ -12,8 +12,9 @@ This is a **personal fork** of [microsoft/terminal](https://github.com/microsoft
 
 ### Custom changes in this fork
 
-This fork adds a few pane-management conveniences and several new pane types
-(file browser, web browser, winget) on top of upstream.
+This fork adds a few pane-management conveniences, several new pane types
+(file browser, web browser, winget), and read-only pane sharing over a local
+WebSocket, on top of upstream.
 
 #### 1. Equalize panes
 
@@ -81,7 +82,41 @@ winget pane exists at a time; opening it again focuses the existing one.
 - Requires `winget` (Windows Package Manager) to be installed (it ships with
   current Windows 10/11).
 
-#### 7. Dedicated `keybindings.json`
+#### 7. Pane sharing (read-only)
+
+Share a live terminal pane so it can be watched from another pane, window, or
+machine — read-only. `sharePane` starts a small WebSocket server bound to
+**localhost** and copies a `ws://localhost:<port>/?token=…` URL (with a random
+token) to the clipboard. `connectSharedSession` opens a viewer pane: it
+pre-fills that URL from the clipboard, connects, and mirrors the host pane live.
+A viewer that joins late immediately sees the current screen (the host sends a
+VT snapshot of its buffer), then live output. The tab of a shared pane shows a
+share glyph; `stopSharePane` ends the share and clears it.
+
+The sharing engine lives in `src/cascadia/SharingEngine` and is independent of
+Windows Terminal (its protocol / WebSocket / authorization core builds and
+unit-tests on its own). The host never modifies its `ConptyConnection`; it tees
+the existing connection's output, so sharing can't change what the shell does.
+
+Security model (read-only means *full disclosure*, not *safe* — anyone with the
+URL and token sees everything on that pane):
+
+- **Localhost only by default.** The server binds loopback. Plaintext `ws://` is
+  never meant to leave the machine directly — expose it (if at all) only behind a
+  TLS-terminating reverse proxy.
+- **Read-only is enforced on the server**, not by trusting the viewer (a viewer's
+  input frames are dropped).
+- **Nothing is sent before the token is verified**; a bad or expired token gets
+  only a rejection.
+- **Auto-expiry.** The token only admits new viewers for 30 minutes, and a share
+  with no viewers auto-stops after 10 minutes, so a forgotten share doesn't keep
+  a shell exposed.
+
+- **Action:** `sharePane` (id `Terminal.SharePane`) — share the focused pane
+- **Action:** `stopSharePane` (id `Terminal.StopSharePane`) — stop sharing it
+- **Action:** `connectSharedSession` (id `Terminal.ConnectSharedSession`) — open a viewer pane
+
+#### 8. Dedicated `keybindings.json`
 
 Key bindings can be managed in a separate `keybindings.json` file in the app's
 `LocalState` folder. Unlike settings *fragments*, this file is allowed to define
@@ -101,7 +136,10 @@ bind the ones you want in `settings.json` (or via the Settings UI → Actions):
         { "id": "Terminal.EqualizePanes", "keys": "ctrl+alt+e" },
         { "id": "Terminal.OpenFileBrowser", "keys": "alt+f" },
         { "id": "Terminal.OpenBrowserPane", "keys": "alt+b" },
-        { "id": "Terminal.OpenWingetPane", "keys": "alt+w" }
+        { "id": "Terminal.OpenWingetPane", "keys": "alt+w" },
+        { "id": "Terminal.SharePane", "keys": "alt+s" },
+        { "id": "Terminal.StopSharePane", "keys": "alt+shift+s" },
+        { "id": "Terminal.ConnectSharedSession", "keys": "alt+shift+c" }
     ]
 }
 ```
@@ -113,6 +151,9 @@ bind the ones you want in `settings.json` (or via the Settings UI → Actions):
 | `Terminal.SelectFileBrowserDrive` | *(unbound)* | Show the drive list in the focused file browser |
 | `Terminal.OpenBrowserPane` | `alt+b` | Open a WebView2 web browser pane |
 | `Terminal.OpenWingetPane` | `alt+w` | Open the winget package-manager pane |
+| `Terminal.SharePane` | `alt+s` | Share the focused pane read-only (localhost) |
+| `Terminal.StopSharePane` | `alt+shift+s` | Stop sharing the focused pane |
+| `Terminal.ConnectSharedSession` | `alt+shift+c` | Open a viewer pane for a shared session |
 
 ---
 
