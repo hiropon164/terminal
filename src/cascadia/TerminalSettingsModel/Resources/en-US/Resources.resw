@@ -729,6 +729,9 @@
   <data name="OpenWingetPaneCommandKey" xml:space="preserve">
     <value>Open winget pane</value>
   </data>
+  <data name="SharePaneCommandKey" xml:space="preserve">
+    <value>Share this pane (read-only)</value>
+  </data>
   <data name="SelectOutputNextCommandKey" xml:space="preserve">
     <value>Select next command output</value>
   </data>

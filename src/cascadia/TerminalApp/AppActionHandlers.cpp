@@ -9,7 +9,10 @@
 #include "FileBrowserContent.h"
 #include "BrowserContent.h"
 #include "WingetContent.h"
+#include "PaneShareSession.h"
 #include "../WinRTUtils/inc/WtExeUtils.h"
+#include <random>
+#include <winrt/Windows.ApplicationModel.DataTransfer.h>
 #include "../../types/inc/utils.hpp"
 #include "../TerminalSettingsAppAdapterLib/TerminalSettings.h"
 #include "Utils.h"
@@ -1729,6 +1732,88 @@ namespace winrt::TerminalApp::implementation
             }
         }
         args.Handled(true);
+    }
+
+    void TerminalPage::_HandleSharePane(const IInspectable& /*sender*/,
+                                        const ActionEventArgs& args)
+    {
+        _StartPaneShare();
+        args.Handled(true);
+    }
+
+    winrt::fire_and_forget TerminalPage::_StartPaneShare()
+    {
+        auto strongThis = get_strong();
+
+        const auto control = _GetActiveControl();
+        if (!control)
+        {
+            co_return;
+        }
+        const auto connection = control.Connection();
+        if (!connection)
+        {
+            co_return;
+        }
+
+        // Generate a random share token (32 hex chars = 128 bits).
+        std::string token;
+        {
+            std::random_device rd;
+            static const char* hex = "0123456789abcdef";
+            for (int i = 0; i < 32; ++i)
+            {
+                token.push_back(hex[rd() & 0xF]);
+            }
+        }
+
+        auto session = std::make_shared<PaneShareSession>(connection, token);
+        const bool ok = co_await session->StartAsync();
+
+        // StartAsync resumes off the UI thread (socket bind); come back to touch XAML.
+        co_await wil::resume_foreground(Dispatcher());
+
+        const auto presenter{ _dialogPresenter.get() };
+        if (!ok)
+        {
+            if (presenter)
+            {
+                winrt::Windows::UI::Xaml::Controls::ContentDialog dlg;
+                dlg.Title(winrt::box_value(winrt::hstring{ L"Pane sharing" }));
+                dlg.Content(winrt::box_value(winrt::hstring{ L"Could not start the sharing server." }));
+                dlg.CloseButtonText(L"OK");
+                co_await presenter.ShowDialog(dlg);
+            }
+            co_return;
+        }
+
+        _paneShares.push_back(session);
+
+        const auto port = session->Port();
+        const std::wstring url = L"ws://localhost:" + std::to_wstring(port) + L"/?token=" + std::wstring(token.begin(), token.end());
+
+        try
+        {
+            winrt::Windows::ApplicationModel::DataTransfer::DataPackage dp;
+            dp.SetText(url);
+            winrt::Windows::ApplicationModel::DataTransfer::Clipboard::SetContent(dp);
+        }
+        catch (...)
+        {
+        }
+
+        if (presenter)
+        {
+            winrt::Windows::UI::Xaml::Controls::ContentDialog dlg;
+            dlg.Title(winrt::box_value(winrt::hstring{ L"Pane sharing started (read-only)" }));
+            winrt::Windows::UI::Xaml::Controls::TextBox tb;
+            tb.IsReadOnly(true);
+            tb.TextWrapping(winrt::Windows::UI::Xaml::TextWrapping::Wrap);
+            tb.Text(winrt::hstring{ L"Share URL (copied to clipboard):\r\n" + url + L"\r\n\r\nLocalhost only. Expose externally only behind a TLS reverse proxy." });
+            dlg.Content(tb);
+            dlg.CloseButtonText(L"OK");
+            co_await presenter.ShowDialog(dlg);
+        }
     }
 
     void TerminalPage::_HandleOpenAbout(const IInspectable& /*sender*/,

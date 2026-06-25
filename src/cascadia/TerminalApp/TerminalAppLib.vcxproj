@@ -170,6 +170,12 @@
     <ClInclude Include="FileBrowserContent.h" />
     <ClInclude Include="BrowserContent.h" />
     <ClInclude Include="WingetContent.h" />
+    <ClInclude Include="PaneShareSession.h" />
+    <ClInclude Include="..\SharingEngine\Protocol.h" />
+    <ClInclude Include="..\SharingEngine\WebSocket.h" />
+    <ClInclude Include="..\SharingEngine\Server.h" />
+    <ClInclude Include="..\SharingEngine\Client.h" />
+    <ClInclude Include="..\SharingEngine\SharingTransportServer.h" />
     <ClInclude Include="SnippetsPaneContent.h">
       <DependentUpon>SnippetsPaneContent.xaml</DependentUpon>
     </ClInclude>
@@ -286,6 +292,22 @@
     <ClCompile Include="FileBrowserContent.cpp" />
     <ClCompile Include="BrowserContent.cpp" />
     <ClCompile Include="WingetContent.cpp" />
+    <ClCompile Include="PaneShareSession.cpp" />
+    <ClCompile Include="..\SharingEngine\Protocol.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\SharingEngine\WebSocket.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\SharingEngine\Server.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\SharingEngine\Client.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\SharingEngine\SharingTransportServer.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="SnippetsPaneContent.cpp">
       <DependentUpon>SnippetsPaneContent.xaml</DependentUpon>
     </ClCompile>

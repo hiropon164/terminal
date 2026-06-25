@@ -41,6 +41,7 @@ namespace winrt::Microsoft::Terminal::Settings
 namespace winrt::TerminalApp::implementation
 {
     struct TerminalSettingsCache;
+    class PaneShareSession;
 
     inline constexpr uint32_t DefaultRowsToScroll{ 3 };
     inline constexpr std::wstring_view TabletInputServiceKey{ L"TabletInputService" };
@@ -328,6 +329,11 @@ namespace winrt::TerminalApp::implementation
 
         std::vector<Microsoft::Terminal::Settings::Model::ActionAndArgs> _startupActions;
         winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection _startupConnection{ nullptr };
+
+        // Active read-only pane-sharing sessions (keeps them and their output
+        // subscriptions alive). See PaneShareSession / SharingEngine.
+        std::vector<std::shared_ptr<PaneShareSession>> _paneShares;
+        winrt::fire_and_forget _StartPaneShare();
 
         std::shared_ptr<Toast> _windowIdToast{ nullptr };
         std::shared_ptr<Toast> _actionSavedToast{ nullptr };
