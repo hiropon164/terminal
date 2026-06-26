@@ -3,7 +3,7 @@
 
 #include "SharingTransportServer.h"
 
-#include "WebSocket.h"
+#include "../SharingEngine/WebSocket.h"
 
 #include <chrono>
 #include <vector>

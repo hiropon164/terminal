@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "Server.h"
+#include "../SharingEngine/Server.h"
 
 #include <atomic>
 #include <functional>

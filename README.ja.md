@@ -59,7 +59,7 @@
 
 稼働中の端末ペインを共有し、別のペイン・ウィンドウ・マシンから**読み取り専用**で閲覧できます。`sharePane` は **localhost** に bind した小さな WebSocket サーバを起動し、ランダムトークン付きの `ws://localhost:<port>/?token=…` URL をクリップボードへコピーします。`connectSharedSession` は観戦ペインを開き、その URL をクリップボードから自動入力して接続し、ホストペインをライブにミラーします。途中参加した観戦側もすぐに現在画面を見られます（ホストがバッファの VT スナップショットを送るため）。共有中ペインのタブには共有アイコンが表示され、`stopSharePane` で共有を終了してアイコンを消します。
 
-共有エンジンは `src/cascadia/SharingEngine` にあり、Windows Terminal から独立しています（プロトコル / WebSocket / 認可コアは単体でビルド・テストできます）。ホストは `ConptyConnection` を一切改変せず、既存接続の出力を tee（分岐）するだけなので、共有がシェルの動作を変えることはありません。
+共有エンジンは `src/cascadia/SharingEngine` にあり、これは OS 非依存の独立ライブラリ [`panesharing`](https://github.com/hiropon164/panesharing)（プロトコル / WebSocket / 認可コア。単体でビルド・テスト可）の **git submodule** です。クローン後に `git submodule update --init` でコアを取得してください。ホストは `ConptyConnection` を一切改変せず、既存接続の出力を tee（分岐）するだけなので、共有がシェルの動作を変えることはありません。
 
 セキュリティモデル（読み取り専用は「安全」ではなく「全情報開示」です — URL とトークンを知る人はそのペインの内容をすべて見られます）：
 

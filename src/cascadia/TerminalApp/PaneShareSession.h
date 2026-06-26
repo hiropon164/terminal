@@ -11,7 +11,7 @@
 #include <winrt/Microsoft.Terminal.TerminalConnection.h>
 #include <winrt/Microsoft.Terminal.Control.h>
 
-#include "../SharingEngine/SharingTransportServer.h"
+#include "SharingTransportServer.h"
 
 #include <functional>
 #include <memory>

@@ -95,10 +95,12 @@ A viewer that joins late immediately sees the current screen (the host sends a
 VT snapshot of its buffer), then live output. The tab of a shared pane shows a
 share glyph; `stopSharePane` ends the share and clears it.
 
-The sharing engine lives in `src/cascadia/SharingEngine` and is independent of
-Windows Terminal (its protocol / WebSocket / authorization core builds and
-unit-tests on its own). The host never modifies its `ConptyConnection`; it tees
-the existing connection's output, so sharing can't change what the shell does.
+The sharing engine lives in `src/cascadia/SharingEngine`, which is a **git
+submodule** of the standalone, OS-independent [`panesharing`](https://github.com/hiropon164/panesharing)
+library (protocol / WebSocket / authorization core; builds and unit-tests on its
+own). After cloning, run `git submodule update --init` so the core is present.
+The host never modifies its `ConptyConnection`; it tees the existing connection's
+output, so sharing can't change what the shell does.
 
 Security model (read-only means *full disclosure*, not *safe* — anyone with the
 URL and token sees everything on that pane):

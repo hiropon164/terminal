@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "Protocol.h"
+#include "../SharingEngine/Protocol.h"
 
 #include <atomic>
 #include <deque>

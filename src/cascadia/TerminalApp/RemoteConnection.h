@@ -12,7 +12,7 @@
 #include <til/latch.h>
 
 #include "../SharingEngine/Client.h"
-#include "../SharingEngine/SharingTransportClient.h"
+#include "SharingTransportClient.h"
 
 #include <atomic>
 #include <memory>

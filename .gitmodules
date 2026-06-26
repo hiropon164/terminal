@@ -1,0 +1,3 @@
+[submodule "src/cascadia/SharingEngine"]
+	path = src/cascadia/SharingEngine
+	url = git@github.com:hiropon164/panesharing.git
